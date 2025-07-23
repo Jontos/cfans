@@ -102,6 +102,7 @@ int main() {
   int buf_slot = AVERAGE;
   int avg_temp;
   int first_run = 1;
+  int last_val = -1;
 
   enable();
   load_graph(data.curve);
@@ -153,12 +154,22 @@ int main() {
         int pwm_range = MAX_PWM - MIN_PWM;
         int pwm_val = fan_percent == 0 ? 0 : pwm_range / 100 * fan_percent + MIN_PWM;
 
-        printf("avg_temp: %i  fan_percent: %i  pwm_val: %i\n", avg_temp, fan_percent, pwm_val);
-        set_pwm(pwm_val);
+        if (last_val == -1) {
+          last_val = pwm_val;
+        }
+        else if (pwm_val > last_val) {
+          last_val++;
+        }
+        else if (pwm_val < last_val) {
+          last_val--;
+        }
+
+        fprintf(stderr, "avg: %i fan: %i pwm: %i last: %i\n",
+                avg_temp, fan_percent, pwm_val, last_val);
+        set_pwm(last_val);
         break;
       } 
     }
     sleep(1);
   }
-
 }
