@@ -19,6 +19,7 @@ struct config {
 void get_dev_path(char *key, char *value, char *conf_opt, int size) {
   char *device = value;
   char *delimiter = strchr(value, '/');
+  int found = 0;
 
   if (delimiter == NULL) {
     fprintf(stderr, "Config: missing filename for %s\n", key);
@@ -39,12 +40,11 @@ void get_dev_path(char *key, char *value, char *conf_opt, int size) {
     errno = 0;
     struct dirent *direntp = readdir(dirp);
 
-    if (errno > 0) {
-      fprintf(stderr, "Failed to read contents of %s: %s\n", hwmon_path, strerror(errno));
-      exit(EXIT_FAILURE);
-    }
-
     if (direntp == NULL) {
+      if (errno > 0) {
+        fprintf(stderr, "Failed to read contents of %s: %s\n", hwmon_path, strerror(errno));
+        exit(EXIT_FAILURE);
+      }
       break;
     }
 
@@ -76,10 +76,14 @@ void get_dev_path(char *key, char *value, char *conf_opt, int size) {
 
     if (strcmp(buffer, device) == 0) {
       snprintf(conf_opt, size, "%s/%s/%s", hwmon_path, direntp->d_name, filename);
+      found = 1;
       break;
     }
   }
   closedir(dirp);
+  if (!found) {
+    fprintf(stderr, "Failed to find hwmon device '%s'\n", device);
+  }
 }
 
 void load_config(struct config *cfg, char *path) {
