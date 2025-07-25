@@ -6,6 +6,8 @@
 #include <string.h>
 #include <unistd.h>
 
+int debug = 0;
+
 struct config {
   char pwm[256];
   char cpu_temp[256];
@@ -21,6 +23,7 @@ struct config {
 struct cleanup_data {
   char pwm_enable[256];
   char pwm_enable_og_val[8];
+  int (*graph_curve)[2];
 };
 
 void get_dev_path(char *key, char *value, char *conf_opt, int size) {
@@ -149,20 +152,41 @@ void load_config(struct config *cfg, char *path) {
       cfg->interval = atoi(value);
     }
 
+    if (debug) {
+      if (lineno == 1) {
+        printf("\n%s:\n", path);
+      }
+      printf("%s=%s\n", key, value);
+    }
+
     lineno++;
   }
 }
 
-void load_graph(int curve[][2], char *graph) {
+int (*load_graph(int *points, char *graph))[2] {
   FILE *file = fopen(graph, "r");
   char buffer[64];
-  int count = 0;
 
   if (file == NULL) {
     fprintf(stderr, "Failed to open %s\n", graph);
     exit(EXIT_FAILURE);
   }
 
+  *points = 1;
+  while (fgets(buffer, sizeof(buffer), file)) {
+    if (buffer[0] == '#' || buffer[0] == '\n') {
+      continue;
+    }
+    *points += 1;
+  }
+
+  int (*curve)[2] = malloc(*points * sizeof(*curve));
+
+  // Set initial graph coordinates to 0,0
+  memset(curve, 0, sizeof(*curve));
+
+  int count = 1;
+  rewind(file);
   while (fgets(buffer, sizeof(buffer), file)) {
     if (buffer[0] == '#' || buffer[0] == '\n') {
       continue;
@@ -171,6 +195,7 @@ void load_graph(int curve[][2], char *graph) {
     count++;
   }
   fclose(file);
+  return curve;
 }
 
 void enable_pwm(char *pwm, void *cleanup) {
@@ -236,7 +261,9 @@ void read_temp(char *path, int *temp) {
 void cleanup(int status, void *arg) {
   struct cleanup_data *data = arg;
 
-  printf("Resetting automatic fan control..\n");
+  free(data->graph_curve);
+
+  printf("\nResetting automatic fan control..\n");
 
   FILE *file = fopen(data->pwm_enable, "w");
   if (!file) {
@@ -257,15 +284,14 @@ void signal_handler(int signum) {
 
 int main(int argc, char *argv[]) {
   int opt;
-  int debug = 0;
   char *config_path = "/etc/cfans/fancontrol.conf";
   struct config cfg;
-  struct cleanup_data cleanup_data;
+  struct cleanup_data data;
 
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
 
-  on_exit(cleanup, &cleanup_data);
+  on_exit(cleanup, &data);
 
   while ((opt = getopt(argc, argv, "c:d")) != -1) {
     switch (opt) {
@@ -285,18 +311,28 @@ int main(int argc, char *argv[]) {
 
   int cpu_temp;
   int gpu_temp;
-  int curve[10][2];
 
   int prev_vals[cfg.average];
   int buf_slot = cfg.average;
   int first_run = 1;
   int last_val;
+  int points;
 
-  enable_pwm(cfg.pwm, &cleanup_data);
-  load_graph(curve, cfg.graph);
+  data.graph_curve = load_graph(&points, cfg.graph);
+  enable_pwm(cfg.pwm, &data);
+
+  if (debug) {
+    printf("\n%s:\n", cfg.graph);
+    for (int i = 0; i < points; i++) {
+      for (int j = 0; j < 2; j++) {
+        printf("%i ", data.graph_curve[i][j]);
+      }
+      printf("\n");
+    }
+    printf("Total points: %i\n\n", points);
+  }
 
   while (1) {
-
     // Reset averaging buffer index
     if (buf_slot % cfg.average == 0) {
       buf_slot = 0;
@@ -325,14 +361,12 @@ int main(int argc, char *argv[]) {
 
     buf_slot++;
 
-    for (int i = 0; i < (sizeof(curve) / sizeof(curve[0])); i++) {
-
-      if (avg_temp < curve[i][0]) {
-
-        int delta_from_node = avg_temp - curve[i-1][0];
-        int percent_diff = curve[i][1] - curve[i-1][1];
-        int temp_diff = curve[i][0] - curve[i-1][0];
-        int fan_percent = delta_from_node * percent_diff / temp_diff + curve[i-1][1];
+    for (int i = 0; i < points; i++) {
+      if (avg_temp < data.graph_curve[i][0]) {
+        int delta_from_node = avg_temp - data.graph_curve[i-1][0];
+        int percent_diff = data.graph_curve[i][1] - data.graph_curve[i-1][1];
+        int temp_diff = data.graph_curve[i][0] - data.graph_curve[i-1][0];
+        int fan_percent = delta_from_node * percent_diff / temp_diff + data.graph_curve[i-1][1];
 
         int pwm_range = cfg.max_pwm - cfg.min_pwm;
         int pwm_val = fan_percent == 0 ? 0 : pwm_range / 100 * fan_percent + cfg.min_pwm;
