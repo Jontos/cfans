@@ -69,12 +69,11 @@ void get_dev_path(char *key, char *value, char *conf_opt, int size) {
       exit(EXIT_FAILURE);
     }
 
-    char *ret = fgets(buffer, sizeof(buffer), filep);
-    fclose(filep);
-    if (ret == NULL) {
+    if (fgets(buffer, sizeof(buffer), filep) == NULL) {
       fprintf(stderr, "Failed to read %s: %s\n", namefile, strerror(errno));
       exit(EXIT_FAILURE);
     }
+    fclose(filep);
 
     char *newline = strchr(buffer, '\n');
     if (newline) {
@@ -204,16 +203,14 @@ void set_pwm(int val, char *pwm) {
 
   FILE *file = fopen(pwm, "w");
   if (!file) {
-    perror("fopen");
+    fprintf(stderr, "Failed to open %s: %s\n", pwm, strerror(errno));
     exit(EXIT_FAILURE);
   }
 
-  int ret = fputs(val_buf, file);
-  if (ret == EOF) {
-    fprintf(stderr, "fputc() failed: %i\n", ret);
+  if (fputs(val_buf, file) == EOF) {
+    fprintf(stderr, "Failed to write to %s: %s\n", pwm, strerror(errno));
     exit(EXIT_FAILURE);
   }
-
   fclose(file);
 }
 
@@ -231,7 +228,6 @@ void read_temp(char *path, int *temp) {
     fprintf(stderr, "fgets: failed to read %s\n", path);
     exit(EXIT_FAILURE);
   }
-
   fclose(file);
 
   *temp = atoi(buffer) / 1000;
