@@ -140,16 +140,16 @@ void load_config(struct config *cfg, char *path) {
       snprintf(cfg->graph, sizeof(cfg->graph), "%s", value);
     }
     else if (strcmp(key, "MIN_PWM") == 0) {
-      cfg->min_pwm = atoi(value);
+      cfg->min_pwm = strtol(value, NULL, 0);
     }
     else if (strcmp(key, "MAX_PWM") == 0) {
-      cfg->max_pwm = atoi(value);
+      cfg->max_pwm = strtol(value, NULL, 0);
     }
     else if (strcmp(key, "AVERAGE") == 0) {
-      cfg->average = atoi(value);
+      cfg->average = strtol(value, NULL, 0);
     }
     else if (strcmp(key, "INTERVAL") == 0) {
-      cfg->interval = atoi(value);
+      cfg->interval = strtol(value, NULL, 0);
     }
 
     if (debug) {
