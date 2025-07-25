@@ -1,3 +1,5 @@
+#include <dirent.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +15,72 @@ struct config {
   int max_pwm;
   int average;
 };
+
+void get_dev_path(char *key, char *value, char *conf_opt, int size) {
+  char *device = value;
+  char *delimiter = strchr(value, '/');
+
+  if (delimiter == NULL) {
+    fprintf(stderr, "Config: missing filename for %s\n", key);
+    exit(EXIT_FAILURE);
+  }
+
+  delimiter[0] = '\0';
+  char *filename = delimiter + 1;
+
+  char *hwmon_path = "/sys/class/hwmon";
+  DIR *dirp = opendir(hwmon_path);
+  if (dirp == NULL) {
+    fprintf(stderr, "Failed to open %s: %s\n", hwmon_path, strerror(errno));
+    exit(EXIT_FAILURE);
+  }
+
+  while (1) {
+    errno = 0;
+    struct dirent *direntp = readdir(dirp);
+
+    if (errno > 0) {
+      fprintf(stderr, "Failed to read contents of %s: %s\n", hwmon_path, strerror(errno));
+      exit(EXIT_FAILURE);
+    }
+
+    if (direntp == NULL) {
+      break;
+    }
+
+    if (direntp->d_name[0] == '.') {
+      continue;
+    }
+
+    char buffer[64];
+    char namefile[64];
+    snprintf(namefile, sizeof(namefile), "%s/%s/name", hwmon_path, direntp->d_name);
+
+    FILE *filep = fopen(namefile, "r");
+    if (filep == NULL) {
+      fprintf(stderr, "Failed to open %s: %s\n", namefile, strerror(errno));
+      exit(EXIT_FAILURE);
+    }
+
+    char *ret = fgets(buffer, sizeof(buffer), filep);
+    fclose(filep);
+    if (ret == NULL) {
+      fprintf(stderr, "Failed to read %s: %s\n", namefile, strerror(errno));
+      exit(EXIT_FAILURE);
+    }
+
+    char *newline = strchr(buffer, '\n');
+    if (newline) {
+      newline[0] = '\0';
+    }
+
+    if (strcmp(buffer, device) == 0) {
+      snprintf(conf_opt, size, "%s/%s/%s", hwmon_path, direntp->d_name, filename);
+      break;
+    }
+  }
+  closedir(dirp);
+}
 
 void load_config(struct config *cfg, char *path) {
   FILE *file = fopen(path, "r");
@@ -38,7 +106,7 @@ void load_config(struct config *cfg, char *path) {
       exit(EXIT_FAILURE);
     }
     
-    *delimiter = '\0';
+    delimiter[0] = '\0';
     char *value = delimiter + 1;
 
     char *newline = strchr(value, '\n');
@@ -47,13 +115,13 @@ void load_config(struct config *cfg, char *path) {
     }
 
     if (strcmp(key, "PWM") == 0) {
-      snprintf(cfg->pwm, sizeof(cfg->pwm), "/sys/class/hwmon/%s", value);
+      get_dev_path(key, value, cfg->pwm, sizeof(cfg->pwm));
     }
     else if (strcmp(key, "CPU_TEMP") == 0) {
-      snprintf(cfg->cpu_temp, sizeof(cfg->cpu_temp), "/sys/class/hwmon/%s", value);
+      get_dev_path(key, value, cfg->cpu_temp, sizeof(cfg->cpu_temp));
     }
     else if (strcmp(key, "GPU_TEMP") == 0) {
-      snprintf(cfg->gpu_temp, sizeof(cfg->gpu_temp), "/sys/class/hwmon/%s", value);
+      get_dev_path(key, value, cfg->gpu_temp, sizeof(cfg->gpu_temp));
     }
     else if (strcmp(key, "GRAPH") == 0) {
       snprintf(cfg->graph, sizeof(cfg->graph), "%s", value);
