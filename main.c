@@ -1,5 +1,6 @@
 #include <dirent.h>
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +16,11 @@ struct config {
   int max_pwm;
   int average;
   int interval;
+};
+
+struct cleanup_data {
+  char pwm_enable[256];
+  char pwm_enable_og_val[8];
 };
 
 void get_dev_path(char *key, char *value, char *conf_opt, int size) {
@@ -93,7 +99,7 @@ void load_config(struct config *cfg, char *path) {
   int lineno = 1;
 
   if (file == NULL) {
-    fprintf(stderr, "fopen: failed to open %s\n", path);
+    fprintf(stderr, "Failed to open %s\n", path);
     exit(EXIT_FAILURE);
   }
 
@@ -154,7 +160,7 @@ void load_graph(int curve[][2], char *graph) {
   int count = 0;
 
   if (file == NULL) {
-    fprintf(stderr, "fopen: failed to open %s\n", graph);
+    fprintf(stderr, "Failed to open %s\n", graph);
     exit(EXIT_FAILURE);
   }
 
@@ -168,22 +174,26 @@ void load_graph(int curve[][2], char *graph) {
   fclose(file);
 }
 
-void enable_pwm(char *pwm) {
-  char pwm_enable[256];
-  snprintf(pwm_enable, sizeof(pwm_enable), "%s_enable", pwm);
+void enable_pwm(char *pwm, void *cleanup) {
+  struct cleanup_data *data = cleanup;
 
-  FILE *file = fopen(pwm_enable, "w");
+  snprintf(data->pwm_enable, sizeof(data->pwm_enable), "%s_enable", pwm);
+  int original_value;
+
+  FILE *file = fopen(data->pwm_enable, "r+");
   if (!file) {
-    perror("fopen");
+    fprintf(stderr, "Failed to open %s: %s\n", data->pwm_enable, strerror(errno));
     exit(EXIT_FAILURE);
   }
 
-  int ret = fputc('1', file);
-  if (ret == EOF) {
-    fprintf(stderr, "fputc() failed: %i\n", ret);
-    exit(EXIT_FAILURE);
+  if (fgets(data->pwm_enable_og_val, sizeof(data->pwm_enable_og_val), file) == NULL) {
+    fprintf(stderr, "Failed to read %s: %s\n", data->pwm_enable, strerror(errno));
   }
 
+  if (fputc('1', file) == EOF) {
+    fprintf(stderr, "Failed to write to %s: %s\n", data->pwm_enable, strerror(errno));
+    exit(EXIT_FAILURE);
+  }
   fclose(file);
 }
 
@@ -227,13 +237,41 @@ void read_temp(char *path, int *temp) {
   *temp = atoi(buffer) / 1000;
 }
 
+void cleanup(int status, void *arg) {
+  struct cleanup_data *data = arg;
+
+  printf("Resetting automatic fan control..\n");
+
+  FILE *file = fopen(data->pwm_enable, "w");
+  if (!file) {
+    perror("Failed to reset automatic fan control");
+    exit(EXIT_FAILURE);
+  }
+
+  if (fputs(data->pwm_enable_og_val, file) == EOF) {
+    perror("Failed to reset automatic fan control");
+    exit(EXIT_FAILURE);
+  }
+  fclose(file);
+}
+
+void signal_handler(int signum) {
+  exit(signum);
+}
+
 int main(int argc, char *argv[]) {
   int opt;
   int debug = 0;
   char *config_path = "/etc/cfans/fancontrol.conf";
   struct config cfg;
+  struct cleanup_data cleanup_data;
 
-  while ((opt = getopt(argc, argv, "c:")) != -1) {
+  signal(SIGINT, signal_handler);
+  signal(SIGTERM, signal_handler);
+
+  on_exit(cleanup, &cleanup_data);
+
+  while ((opt = getopt(argc, argv, "c:d")) != -1) {
     switch (opt) {
       case 'c':
         config_path = optarg;
@@ -242,7 +280,7 @@ int main(int argc, char *argv[]) {
         debug = 1;
         break;
       case '?':
-        fprintf(stderr, "Usage: %s [-c config_file]\n", argv[0]);
+        fprintf(stderr, "Usage: %s [-c CONFIG_FILE] [-d]\n", argv[0]);
         exit(EXIT_FAILURE);
     } 
   }
@@ -258,7 +296,7 @@ int main(int argc, char *argv[]) {
   int first_run = 1;
   int last_val;
 
-  enable_pwm(cfg.pwm);
+  enable_pwm(cfg.pwm, &cleanup_data);
   load_graph(curve, cfg.graph);
 
   while (1) {
