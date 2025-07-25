@@ -14,6 +14,7 @@ struct config {
   int min_pwm;
   int max_pwm;
   int average;
+  int interval;
 };
 
 void get_dev_path(char *key, char *value, char *conf_opt, int size) {
@@ -138,6 +139,9 @@ void load_config(struct config *cfg, char *path) {
     }
     else if (strcmp(key, "AVERAGE") == 0) {
       cfg->average = atoi(value);
+    }
+    else if (strcmp(key, "INTERVAL") == 0) {
+      cfg->interval = atoi(value);
     }
 
     lineno++;
@@ -300,6 +304,6 @@ int main() {
         break;
       } 
     }
-    sleep(1);
+    sleep(cfg.interval);
   }
 }
