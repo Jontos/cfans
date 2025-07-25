@@ -227,10 +227,27 @@ void read_temp(char *path, int *temp) {
   *temp = atoi(buffer) / 1000;
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+  int opt;
+  int debug = 0;
+  char *config_path = "/etc/cfans/fancontrol.conf";
   struct config cfg;
 
-  load_config(&cfg, "/etc/cfans/fancontrol.conf");
+  while ((opt = getopt(argc, argv, "c:")) != -1) {
+    switch (opt) {
+      case 'c':
+        config_path = optarg;
+        break;
+      case 'd':
+        debug = 1;
+        break;
+      case '?':
+        fprintf(stderr, "Usage: %s [-c config_file]\n", argv[0]);
+        exit(EXIT_FAILURE);
+    } 
+  }
+
+  load_config(&cfg, config_path);
 
   int cpu_temp;
   int gpu_temp;
@@ -297,8 +314,10 @@ int main() {
           last_val--;
         }
 
-        // fprintf(stderr, "avg: %i fan: %i pwm: %i last: %i\n",
-        //         avg_temp, fan_percent, pwm_val, last_val);
+        if (debug) {
+          printf("avg: %i fan: %i pwm: %i last: %i\n",
+                  avg_temp, fan_percent, pwm_val, last_val);
+        }
 
         set_pwm(last_val, cfg.pwm);
         break;
