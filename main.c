@@ -1,5 +1,6 @@
 #include <dirent.h>
 #include <errno.h>
+#include <linux/limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,22 +9,19 @@
 
 int debug = 0;
 
+volatile sig_atomic_t keep_running = 1;
+
 struct config {
-  char pwm[256];
-  char cpu_temp[256];
-  char gpu_temp[256];
-  char graph[256];
+  char pwm[PATH_MAX];
+  char pwm_enable[PATH_MAX];
+  char cpu_temp[PATH_MAX];
+  char gpu_temp[PATH_MAX];
+  char graph[PATH_MAX];
 
   int min_pwm;
   int max_pwm;
   int average;
   int interval;
-};
-
-struct cleanup_data {
-  char pwm_enable[256];
-  char pwm_enable_og_val[8];
-  int (*graph_curve)[2];
 };
 
 void get_dev_path(char *key, char *value, char *conf_opt, int size) {
@@ -129,6 +127,8 @@ void load_config(struct config *cfg, char *path) {
 
     if (strcmp(key, "PWM") == 0) {
       get_dev_path(key, value, cfg->pwm, sizeof(cfg->pwm));
+      char *enable_string = "_enable";
+      snprintf(cfg->pwm_enable, sizeof(cfg->pwm_enable), "%s%s", cfg->pwm, enable_string);
     }
     else if (strcmp(key, "CPU_TEMP") == 0) {
       get_dev_path(key, value, cfg->cpu_temp, sizeof(cfg->cpu_temp));
@@ -177,7 +177,7 @@ int (*load_graph(int *points, char *graph))[2] {
     if (buffer[0] == '#' || buffer[0] == '\n') {
       continue;
     }
-    *points += 1;
+    (*points)++;
   }
 
   int (*curve)[2] = malloc(*points * sizeof(*curve));
@@ -198,24 +198,21 @@ int (*load_graph(int *points, char *graph))[2] {
   return curve;
 }
 
-void enable_pwm(char *pwm, void *cleanup) {
-  struct cleanup_data *data = cleanup;
+void enable_pwm(struct config *cfg, char *og_value) {
+  struct config *config = cfg;
 
-  snprintf(data->pwm_enable, sizeof(data->pwm_enable), "%s_enable", pwm);
-  int original_value;
-
-  FILE *file = fopen(data->pwm_enable, "r+");
+  FILE *file = fopen(cfg->pwm_enable, "r+");
   if (!file) {
-    fprintf(stderr, "Failed to open %s: %s\n", data->pwm_enable, strerror(errno));
+    fprintf(stderr, "Failed to open %s: %s\n", cfg->pwm_enable, strerror(errno));
     exit(EXIT_FAILURE);
   }
 
-  if (fgets(data->pwm_enable_og_val, sizeof(data->pwm_enable_og_val), file) == NULL) {
-    fprintf(stderr, "Failed to read %s: %s\n", data->pwm_enable, strerror(errno));
+  if (fgets(og_value, sizeof(og_value), file) == NULL) {
+    fprintf(stderr, "Failed to read %s: %s\n", cfg->pwm_enable, strerror(errno));
   }
 
   if (fputc('1', file) == EOF) {
-    fprintf(stderr, "Failed to write to %s: %s\n", data->pwm_enable, strerror(errno));
+    fprintf(stderr, "Failed to write to %s: %s\n", cfg->pwm_enable, strerror(errno));
     exit(EXIT_FAILURE);
   }
   fclose(file);
@@ -258,40 +255,17 @@ void read_temp(char *path, int *temp) {
   *temp = atoi(buffer) / 1000;
 }
 
-void cleanup(int status, void *arg) {
-  struct cleanup_data *data = arg;
-
-  free(data->graph_curve);
-
-  printf("\nResetting automatic fan control..\n");
-
-  FILE *file = fopen(data->pwm_enable, "w");
-  if (!file) {
-    perror("Failed to reset automatic fan control");
-    exit(EXIT_FAILURE);
-  }
-
-  if (fputs(data->pwm_enable_og_val, file) == EOF) {
-    perror("Failed to reset automatic fan control");
-    exit(EXIT_FAILURE);
-  }
-  fclose(file);
-}
-
 void signal_handler(int signum) {
-  exit(signum);
+  keep_running = 0;
 }
 
 int main(int argc, char *argv[]) {
   int opt;
   char *config_path = "/etc/cfans/fancontrol.conf";
   struct config cfg;
-  struct cleanup_data data;
 
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
-
-  on_exit(cleanup, &data);
 
   while ((opt = getopt(argc, argv, "c:d")) != -1) {
     switch (opt) {
@@ -316,23 +290,26 @@ int main(int argc, char *argv[]) {
   int buf_slot = cfg.average;
   int first_run = 1;
   int last_val;
-  int points;
 
-  data.graph_curve = load_graph(&points, cfg.graph);
-  enable_pwm(cfg.pwm, &data);
+  int points;
+  int (*graph_curve)[2];
+  graph_curve = load_graph(&points, cfg.graph);
+
+  char og_pwm_enable_value[4];
+  enable_pwm(&cfg, og_pwm_enable_value);
 
   if (debug) {
     printf("\n%s:\n", cfg.graph);
     for (int i = 0; i < points; i++) {
       for (int j = 0; j < 2; j++) {
-        printf("%i ", data.graph_curve[i][j]);
+        printf("%i ", graph_curve[i][j]);
       }
       printf("\n");
     }
     printf("Total points: %i\n\n", points);
   }
 
-  while (1) {
+  while (keep_running) {
     // Reset averaging buffer index
     if (buf_slot % cfg.average == 0) {
       buf_slot = 0;
@@ -362,11 +339,11 @@ int main(int argc, char *argv[]) {
     buf_slot++;
 
     for (int i = 0; i < points; i++) {
-      if (avg_temp < data.graph_curve[i][0]) {
-        int delta_from_node = avg_temp - data.graph_curve[i-1][0];
-        int percent_diff = data.graph_curve[i][1] - data.graph_curve[i-1][1];
-        int temp_diff = data.graph_curve[i][0] - data.graph_curve[i-1][0];
-        int fan_percent = delta_from_node * percent_diff / temp_diff + data.graph_curve[i-1][1];
+      if (avg_temp < graph_curve[i][0]) {
+        int delta_from_node = avg_temp - graph_curve[i-1][0];
+        int percent_diff = graph_curve[i][1] - graph_curve[i-1][1];
+        int temp_diff = graph_curve[i][0] - graph_curve[i-1][0];
+        int fan_percent = delta_from_node * percent_diff / temp_diff + graph_curve[i-1][1];
 
         int pwm_range = cfg.max_pwm - cfg.min_pwm;
         int pwm_val = fan_percent == 0 ? 0 : pwm_range / 100 * fan_percent + cfg.min_pwm;
@@ -393,4 +370,21 @@ int main(int argc, char *argv[]) {
     }
     sleep(cfg.interval);
   }
+  // Run cleanup..
+  free(graph_curve);
+
+  printf("\nResetting automatic fan control..\n");
+
+  FILE *file = fopen(cfg.pwm_enable, "w");
+  if (!file) {
+    fprintf(stderr, "Failed to open %s: %s\n", cfg.pwm_enable, strerror(errno));
+    exit(EXIT_FAILURE);
+  }
+
+  if (fputs(og_pwm_enable_value, file) == EOF) {
+    fprintf(stderr, "Failed to write to %s: %s\n", cfg.pwm_enable, strerror(errno));
+    exit(EXIT_FAILURE);
+  }
+  fclose(file);
+
 }
