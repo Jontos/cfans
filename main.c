@@ -532,7 +532,7 @@ int main(int argc, char *argv[]) {
         }
 
         if (debug) {
-          printf("\ravg: %i fan: %i pwm: %i last: %i",
+          printf("\ravg: %i fan: %i pwm: %i last: %i       ",
                   avg_temp, fan_percent, pwm_val, last_val);
           fflush(stdout);
         }
