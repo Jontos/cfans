@@ -331,8 +331,6 @@ void load_config(struct config *cfg, char *path) {
   register_temp_inputs(gpu_path, gpu_sensors, &cfg->gpu);
   strncat(cfg->pwm, pwm_file, sizeof(cfg->pwm) - strlen(cfg->pwm) - 1);
   snprintf(cfg->pwm_enable, sizeof(cfg->pwm_enable), "%s%s", cfg->pwm, "_enable");
-  free(cpu_sensors);
-  free(gpu_sensors);
 }
 
 int (*load_graph(int *points, char *graph))[2] {
