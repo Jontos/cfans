@@ -534,8 +534,9 @@ int main(int argc, char *argv[]) {
         }
 
         if (debug) {
-          printf("avg: %i fan: %i pwm: %i last: %i\n",
+          printf("\ravg: %i fan: %i pwm: %i last: %i",
                   avg_temp, fan_percent, pwm_val, last_val);
+          fflush(stdout);
         }
 
         set_pwm(last_val, cfg.pwm);
