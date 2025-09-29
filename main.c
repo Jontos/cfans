@@ -7,6 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <time.h>
 
 int debug = 0;
 
@@ -288,7 +289,7 @@ void load_config(struct config *cfg, char *path) {
       cfg->average = strtol(value, NULL, 0);
     }
     else if (strcmp(key, "INTERVAL") == 0) {
-      cfg->interval = strtol(value, NULL, 0);
+      cfg->interval = strtol(value, NULL, 0) * 1000000;
     }
 
     if (debug) {
@@ -541,7 +542,9 @@ int main(int argc, char *argv[]) {
         break;
       } 
     }
-    sleep(cfg.interval);
+    struct timespec interval;
+    interval.tv_nsec = cfg.interval;
+    nanosleep(&interval, NULL);
   }
   // Run cleanup..
   free(graph_curve);
