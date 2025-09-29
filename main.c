@@ -94,11 +94,13 @@ void get_dev_path(char *key, char *value, char *dev_path, int size) {
 char **tokenize_sensors(char *sensors_str, int *num_sensors) {
   int sensor_count = 1;
   char *delimiter = strchr(sensors_str, ':');
+
   while (1) {
     if (delimiter == NULL) break;
     sensor_count++;
     delimiter = strchr(delimiter + 1, ':');
   }
+
   *num_sensors = sensor_count;
   char **sensors = malloc(sensor_count * sizeof(char *));
   if (sensors == NULL) {
@@ -111,6 +113,7 @@ char **tokenize_sensors(char *sensors_str, int *num_sensors) {
     perror("strdup");
     exit(EXIT_FAILURE);
   }
+
   char *token = strtok(sensors_str_copy, ":");
   int i = 0;
   while (token != NULL) {
@@ -327,6 +330,8 @@ void load_config(struct config *cfg, char *path) {
   register_temp_inputs(gpu_path, gpu_sensors, &cfg->gpu);
   strncat(cfg->pwm, pwm_file, sizeof(cfg->pwm) - strlen(cfg->pwm) - 1);
   snprintf(cfg->pwm_enable, sizeof(cfg->pwm_enable), "%s%s", cfg->pwm, "_enable");
+  free(cpu_sensors);
+  free(gpu_sensors);
 }
 
 int (*load_graph(int *points, char *graph))[2] {
@@ -540,6 +545,8 @@ int main(int argc, char *argv[]) {
   }
   // Run cleanup..
   free(graph_curve);
+  free(cfg.cpu.sensors);
+  free(cfg.gpu.sensors);
 
   printf("\nResetting automatic fan control..\n");
 
