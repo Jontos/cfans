@@ -461,7 +461,8 @@ int main(int argc, char *argv[]) {
   int prev_vals[cfg.average];
   int buf_slot = cfg.average;
   int first_run = 1;
-  int last_val;
+  int last_val = 0;
+  int written_val = -1;
 
   int points;
   int (*graph_curve)[2];
@@ -537,7 +538,10 @@ int main(int argc, char *argv[]) {
           fflush(stdout);
         }
 
-        set_pwm(last_val, cfg.pwm);
+        if (last_val != written_val) {
+          set_pwm(last_val, cfg.pwm);
+          written_val = last_val;
+        }
         break;
       } 
     }
