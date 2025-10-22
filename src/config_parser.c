@@ -24,22 +24,14 @@ typedef struct {
 ParsedSection parse_section(const char *section) {
   ParsedSection result = { .type = SECTION_UNKNOWN, .name = NULL };
 
-  char *section_copy = strdup(section);
-  if (section_copy == NULL) {
-    perror("strdup");
-    return result;
-  }
-
-  char *delimiter = strchr(section_copy, ':');
+  char *delimiter = strchr(section, ':');
   if (delimiter == NULL) {
     if (strcmp(section, "General") == 0) {
       result.type = SECTION_GENERAL;
     }
-    free(section_copy);
     return result;
   }
 
-  *delimiter = '\0';
   char *name = delimiter + 1;
   while (*name && isspace(*name)) {
     name++;
@@ -47,14 +39,13 @@ ParsedSection parse_section(const char *section) {
 
   if (strncmp(section, "Source", strlen("Source")) == 0) {
     result.type = SECTION_SOURCE;
-    result.name = strdup(name);
+    result.name = name;
   }
   else if (strncmp(section, "Fan", strlen("Fan")) == 0) {
     result.type = SECTION_FAN;
-    result.name = strdup(name);
+    result.name = name;
   }
 
-  free(section_copy);
   return result;
 }
 
