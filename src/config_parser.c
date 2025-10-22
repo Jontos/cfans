@@ -7,19 +7,7 @@
 
 #include "config_parser.h"
 
-#define INITIAL_CAPACITY 8
-
-typedef struct {
-  char *section;
-  char *name;
-  char *value;
-} ConfigEntry;
-
-typedef struct {
-  ConfigEntry *entries;
-  int count;
-  int capacity;
-} ConfigData;
+#define INITIAL_CAPACITY 4
 
 typedef enum {
   SECTION_UNKNOWN,
@@ -33,181 +21,168 @@ typedef struct {
   const char *name;
 } ParsedSection;
 
-ParsedSection parse_section(char *section) {
+ParsedSection parse_section(const char *section) {
   ParsedSection result = { .type = SECTION_UNKNOWN, .name = NULL };
 
-  char *delimiter = strchr(section, ':');
+  char *section_copy = strdup(section);
+  if (section_copy == NULL) {
+    perror("strdup");
+    return result;
+  }
 
+  char *delimiter = strchr(section_copy, ':');
   if (delimiter == NULL) {
     if (strcmp(section, "General") == 0) {
       result.type = SECTION_GENERAL;
     }
+    free(section_copy);
     return result;
   }
 
   *delimiter = '\0';
-  char *name = delimiter++;
+  char *name = delimiter + 1;
   while (*name && isspace(*name)) {
     name++;
   }
 
-  if (strcmp(section, "Source") == 0) {
+  if (strncmp(section, "Source", strlen("Source")) == 0) {
     result.type = SECTION_SOURCE;
-    result.name = name;
+    result.name = strdup(name);
   }
-  else if (strcmp(section, "Fan") == 0) {
+  else if (strncmp(section, "Fan", strlen("Fan")) == 0) {
     result.type = SECTION_FAN;
-    result.name = name;
+    result.name = strdup(name);
   }
 
+  free(section_copy);
   return result;
 }
 
-int handle_general_section(Config *config, ConfigEntry entry) {
-  if (strcmp(entry.name, "Graph") == 0) {
-    config->graph_file = strdup(entry.value);
+int configure_general(Config *config, const char *name, const char *value) {
+  if (strcmp(name, "Graph") == 0) {
+    config->graph_file = strdup(value);
   }
-  else if (strcmp(entry.name, "Average") == 0) {
-    config->average = (int)strtol(entry.value, NULL, 0);
+  else if (strcmp(name, "Average") == 0) {
+    config->average = (int)strtol(value, NULL, 0);
   }
-  else if (strcmp(entry.name, "Interval") == 0) {
-    config->interval = (int)strtol(entry.value, NULL, 0);
+  else if (strcmp(name, "Interval") == 0) {
+    config->interval = (int)strtol(value, NULL, 0);
   }
   else {
-    (void)fprintf(stderr, "Unknown key \"%s\" in section \"%s\"\n", entry.name, entry.section);
+    (void)fprintf(stderr, "Unknown key in general section: %s\n", name);
     return -1;
   }
   return 0;
 }
 
-int resize_array(void **array, size_t size, int *capacity) {
+void *resize_array(void **array, size_t size, int *capacity) {
   int new_capacity = *capacity == 0 ? INITIAL_CAPACITY : *capacity * 2;
 
   void *new_array = realloc(*array, size * new_capacity);
   if (new_array == NULL) {
     perror("Realloc failed");
-    return -1;
+    return NULL;
   }
 
-  *array = new_array;
   *capacity = new_capacity;
-  return 0;
+  return new_array;
 }
 
-int handle_source_section(Config *config, ConfigEntry entry, const char *source_name) {
-  // Search for existing source
-  int source_num = -1;
-  for (int i = 0; i < config->num_sources; i++) {
-    if (strcmp(config->sources[i].name, source_name) == 0) {
-      source_num = i;
-      break;
+// Generic helper struct for casting to
+typedef struct {
+  char *name;
+} ConfigItem;
+
+void *find_or_create_item(void **array, int *count, int *capacity,
+                     size_t item_size, const char *name)
+{
+  for (int i = 0; i < *count; i++) {
+    ConfigItem *item = (ConfigItem*)((char*)*array + (i * item_size));
+    if (strcmp(item->name, name) == 0) {
+      return item;
     }
   }
 
-  // If source doesn't exist
-  if (source_num == -1) {
-    // Check if we have space
-    if (config->num_sources == config->source_capacity) {
-      if (resize_array((void**)&config->sources, sizeof(Source), &config->source_capacity) < 0) {
-        return -1;
-      }
+  if (*count == *capacity) {
+    ConfigItem *resized_array = resize_array(array, item_size, capacity);
+    if (resized_array == NULL) {
+      return NULL;
     }
-    // Assign name to the new source
-    source_num = config->num_sources;
-    config->sources[config->num_sources].name = strdup(source_name);
-    config->num_sources++;
+    *array = resized_array;
   }
 
-  Source *current_source = &config->sources[source_num];
+  ConfigItem *new_item = (ConfigItem*)((char*)*array + (*count * item_size));
 
-  if (strcmp("Driver", entry.name) == 0) {
-    current_source->driver = strdup(entry.value);
+  memset(new_item, 0, item_size);
+  new_item->name = strdup(name);
+  if (new_item->name == NULL) {
+    perror("strdup failed for new item name");
+    return NULL;
   }
-  else if (strcmp("PciDevice", entry.name) == 0) {
-    current_source->pci_device = strdup(entry.value);
+  (*count)++;
+  return new_item;
+}
+
+int configure_source(Source *source, const char *key, const char *value) {
+  if (strcmp("Driver", key) == 0) {
+    source->driver = strdup(value);
+    if (source->driver == NULL) {
+      perror("strdup failed for driver");
+      return -1;
+    }
   }
-  else if (strcmp("Sensors", entry.name) == 0) {
-    current_source->sensors_string = strdup(entry.value);
+  else if (strcmp("PciDevice", key) == 0) {
+    source->pci_device = strdup(value);
+    if (source->pci_device == NULL) {
+      perror("strdup failed for pci_device");
+      return -1;
+    }
+  }
+  else if (strcmp("Sensors", key) == 0) {
+    source->sensors_string = strdup(value);
+    if (source->sensors_string == NULL) {
+      perror("strdup failed for sensors_string");
+      return -1;
+    }
   }
   else {
-    (void)fprintf(stderr, "Unknown key \"%s\" in section \"%s\"\n", entry.name, entry.section);
+    (void)fprintf(stderr, "Unknown key in source section: %s\n", key);
     return -1;
   }
   return 0;
 }
 
-int handle_fan_section(Config *config, ConfigEntry entry, const char *fan_name) {
-  // Search for existing fan
-  int fan_num = -1;
-  for (int i = 0; i < config->num_fans; i++) {
-    if (strcmp(config->fans[i].name, fan_name) == 0) {
-      fan_num = i;
-      break;
+int configure_fan(Fan *fan, const char *key, const char *value) {
+  if (strcmp("Driver", key) == 0) {
+    fan->driver = strdup(value);
+    if (fan->driver == NULL) {
+      perror("strdup failed for driver");
+      return -1;
     }
   }
-
-  // If fan doesn't exist
-  if (fan_num == -1) {
-    // Check if we have space
-    if (config->num_fans == config->fan_capacity) {
-      if (resize_array((void**)&config->fans, sizeof(Fan), &config->fan_capacity) < 0) {
-        return -1;
-      }
+  else if (strcmp("PWMFile", key) == 0) {
+    fan->pwm_file = strdup(value);
+    if (fan->pwm_file == NULL) {
+      perror("strdup failed for pwm_file");
+      return -1;
     }
-    // Assign name to the new fan
-    fan_num = config->num_fans;
-    config->fans[config->num_fans].name = strdup(fan_name);
-    config->num_fans++;
   }
-
-  Fan *current_fan = &config->fans[fan_num];
-
-  if (strcmp("Driver", entry.name) == 0) {
-    current_fan->driver = strdup(entry.value);
+  else if (strcmp("MinPWM", key) == 0) {
+    fan->min_pwm = (int)strtol(value, NULL, 0);
   }
-  else if (strcmp("PWMFile", entry.name) == 0) {
-    current_fan->pwm_file = strdup(entry.value);
+  else if (strcmp("MaxPWM", key) == 0) {
+    fan->max_pwm = (int)strtol(value, NULL, 0);
   }
-  else if (strcmp("MinPWM", entry.name) == 0) {
-    current_fan->min_pwm = (int)strtol(entry.value, NULL, 0);
-  }
-  else if (strcmp("MaxPWM", entry.name) == 0) {
-    current_fan->max_pwm = (int)strtol(entry.value, NULL, 0);
-  }
-  else if (strcmp("TempSources", entry.name) == 0) {
-    current_fan->temp_sources_string = strdup(entry.value);
+  else if (strcmp("TempSources", key) == 0) {
+    fan->temp_sources_string = strdup(value);
+    if (fan->temp_sources_string == NULL) {
+      perror("strdup failed for temp_sources_string");
+      return -1;
+    }
   }
   else {
-    (void)fprintf(stderr, "Unknown key \"%s\" in section \"%s\"\n", entry.name, entry.section);
+    (void)fprintf(stderr, "Unknown key in fan section: %s\n", key);
     return -1;
-  }
-  return 0;
-}
-
-int process_config_data(Config *config, ConfigData *data) {
-  for (int i = 0; i < data->count; i++) {
-    ParsedSection psection = parse_section(data->entries[i].section);
-
-    switch (psection.type) {
-      case SECTION_GENERAL:
-        if (handle_general_section(config, data->entries[i]) < 0) {
-          return -1;
-        }
-        break;
-      case SECTION_SOURCE:
-        if (handle_source_section(config, data->entries[i], psection.name) < 0) {
-          return -1;
-        }
-        break;
-      case SECTION_FAN:
-        if (handle_fan_section(config, data->entries[i], psection.name) < 0) {
-          return -1;
-        }
-        break;
-      case SECTION_UNKNOWN:
-        (void)fprintf(stderr, "Config entry \"%s\" missing section!\n", data->entries->name);
-        break;
-    }
   }
   return 0;
 }
@@ -215,40 +190,52 @@ int process_config_data(Config *config, ConfigData *data) {
 static int handler(void *user, const char *section, const char *name,
                    const char *value)
 {
-  ConfigData *data = user;
+  Config *config = user;
 
-  if (data->count == data->capacity) {
-    if (resize_array((void**)&data->entries, sizeof(ConfigEntry), &data->capacity) < 0) {
-      return 0;
-    }
+  ParsedSection psection = parse_section(section);
+
+  switch (psection.type) {
+    case SECTION_GENERAL:
+      if (configure_general(config, name, value) < 0) {
+        return 0;
+      }
+      break;
+    case SECTION_SOURCE:
+      Source *source = find_or_create_item(
+        (void**)&config->sources,
+        &config->num_sources,
+        &config->source_capacity,
+        sizeof(Source),
+        psection.name
+      );
+      if (source == NULL) {
+        return 0;
+      }
+      if (configure_source(source, name, value) < 0) {
+        return 0;
+      }
+      break;
+    case SECTION_FAN:
+      Fan *fan = find_or_create_item(
+        (void**)&config->fans,
+        &config->num_fans,
+        &config->fan_capacity,
+        sizeof(Fan),
+        psection.name
+      );
+      if (fan == NULL) {
+        return 0;
+      }
+      if (configure_fan(fan, name, value) < 0) {
+        return 0;
+      }
+      break;
+    case SECTION_UNKNOWN:
+      (void)fprintf(stderr, "Config entry \"%s\" missing section!\n", name);
+      break;
   }
-
-  ConfigEntry *new_entry = &data->entries[data->count];
-
-  new_entry->section = strdup(section);
-  new_entry->name = strdup(name);
-  new_entry->value = strdup(value);
-
-  if (new_entry->section == NULL || new_entry->name == NULL || new_entry->value == NULL) {
-    free(new_entry->section);
-    free(new_entry->name);
-    free(new_entry->value);
-    perror("strdup failed");
-    return 0;
-  }
-
-  data->count++;
 
   return 1;
-}
-
-void free_config_data(ConfigData *data) {
-  for (int i = 0; i < data->count; i++) {
-    free(data->entries[i].section);
-    free(data->entries[i].name);
-    free(data->entries[i].value);
-  }
-  free(data->entries);
 }
 
 void free_config(Config *config) {
@@ -272,34 +259,23 @@ void free_config(Config *config) {
 int load_config(const char *path, Config *config) {
   memset(config, 0, sizeof(Config));
 
-  ConfigData config_data;
-  memset(&config_data, 0, sizeof(ConfigData));
-
-  int ret = ini_parse(path, handler, &config_data);
+  int ret = ini_parse(path, handler, config);
   switch (ret) {
     case  0:
       break;
     case -1:
       (void)fprintf(stderr, "Can't load %s\n", path);
-      free_config_data(&config_data);
+      free_config(config);
       return -1;
     case -2:
       (void)fprintf(stderr, "ini_parse() failed to allocate memory!\n");
-      free_config_data(&config_data);
+      free_config(config);
       return -1;
     default:
       (void)fprintf(stderr, "Error in config file at line %i\n", ret);
-      free_config_data(&config_data);
+      free_config(config);
       return -1;
   }
-
-  if (process_config_data(config, &config_data) < 0) {
-    (void)fprintf(stderr, "Failed to process config data!\n");
-    free_config_data(&config_data);
-    free_config(config);
-    return -1;
-  }
-  free_config_data(&config_data);
 
   return 0;
 }
