@@ -88,39 +88,62 @@ void *resize_array(void **array, size_t size, int *capacity) {
   return new_array;
 }
 
-// Generic helper struct for casting to
-typedef struct {
-  char *name;
-} ConfigItem;
-
-void *find_or_create_item(void **array, int *count, int *capacity,
-                     size_t item_size, const char *name)
+Source *find_or_create_source(Source **sources, int *count,
+                            int *capacity, const char *name)
 {
   for (int i = 0; i < *count; i++) {
-    ConfigItem *item = (ConfigItem*)((char*)*array + (i * item_size));
-    if (strcmp(item->name, name) == 0) {
-      return item;
+    if (strcmp((*sources)[i].name, name) == 0) {
+      return &(*sources)[i];
     }
   }
 
   if (*count == *capacity) {
-    ConfigItem *resized_array = resize_array(array, item_size, capacity);
+    Source *resized_array = resize_array((void**)sources, sizeof(Source), capacity);
     if (resized_array == NULL) {
       return NULL;
     }
-    *array = resized_array;
+    *sources = resized_array;
   }
 
-  ConfigItem *new_item = (ConfigItem*)((char*)*array + (*count * item_size));
+  Source *new_source = &(*sources)[*count];
 
-  memset(new_item, 0, item_size);
-  new_item->name = strdup(name);
-  if (new_item->name == NULL) {
-    perror("strdup failed for new item name");
+  memset(new_source, 0, sizeof(Source));
+  new_source->name = strdup(name);
+  if (new_source->name == NULL) {
+    perror("strdup failed for new source name");
     return NULL;
   }
   (*count)++;
-  return new_item;
+  return new_source;
+}
+
+Fan *find_or_create_fan(Fan **fans, int *count,
+                            int *capacity, const char *name)
+{
+  for (int i = 0; i < *count; i++) {
+    if (strcmp((*fans)[i].name, name) == 0) {
+      return &(*fans)[i];
+    }
+  }
+
+  if (*count == *capacity) {
+    Fan *resized_array = resize_array((void**)fans, sizeof(Fan), capacity);
+    if (resized_array == NULL) {
+      return NULL;
+    }
+    *fans = resized_array;
+  }
+
+  Fan *new_fan = &(*fans)[*count];
+
+  memset(new_fan, 0, sizeof(Fan));
+  new_fan->name = strdup(name);
+  if (new_fan->name == NULL) {
+    perror("strdup failed for new fan name");
+    return NULL;
+  }
+  (*count)++;
+  return new_fan;
 }
 
 int configure_source(Source *source, const char *key, const char *value) {
@@ -201,32 +224,30 @@ static int handler(void *user, const char *section, const char *name,
       }
       break;
     case SECTION_SOURCE:
-      Source *source = find_or_create_item(
-        (void**)&config->sources,
+      Source *current_source = find_or_create_source(
+        &config->sources,
         &config->num_sources,
         &config->source_capacity,
-        sizeof(Source),
         psection.name
       );
-      if (source == NULL) {
+      if (current_source == NULL) {
         return 0;
       }
-      if (configure_source(source, name, value) < 0) {
+      if (configure_source(current_source, name, value) < 0) {
         return 0;
       }
       break;
     case SECTION_FAN:
-      Fan *fan = find_or_create_item(
-        (void**)&config->fans,
+      Fan *current_fan = find_or_create_fan(
+        &config->fans,
         &config->num_fans,
         &config->fan_capacity,
-        sizeof(Fan),
         psection.name
       );
-      if (fan == NULL) {
+      if (current_fan == NULL) {
         return 0;
       }
-      if (configure_fan(fan, name, value) < 0) {
+      if (configure_fan(current_fan, name, value) < 0) {
         return 0;
       }
       break;
