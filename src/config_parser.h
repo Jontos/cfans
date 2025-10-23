@@ -6,8 +6,7 @@ typedef struct {
     char *driver;
     char *pci_device;
     char *sensors_string;
-    char **sensors;
-    int num_sensors;
+    int scale;
 } Source;
 
 typedef struct {
@@ -17,8 +16,6 @@ typedef struct {
     int min_pwm;
     int max_pwm;
     char *temp_sources_string;
-    char **temp_sources;
-    int num_temp_sources;
 } Fan;
 
 typedef struct {
@@ -35,7 +32,14 @@ typedef struct {
     int fan_capacity;
 } Config;
 
+typedef struct {
+    int (*fan_curve)[2];
+    int num_points;
+    int capacity;
+} Graph;
+
 int load_config(const char *path, Config *config);
+int load_graph(const char *graph_file, Graph *graph);
 void free_config(Config *config);
 
 #endif

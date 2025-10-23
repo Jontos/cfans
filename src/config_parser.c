@@ -6,8 +6,7 @@
 #include <string.h>
 
 #include "config_parser.h"
-
-#define INITIAL_CAPACITY 4
+#include "utils.h"
 
 typedef enum {
   SECTION_UNKNOWN,
@@ -66,19 +65,6 @@ int configure_general(Config *config, const char *name, const char *value) {
   return 0;
 }
 
-void *resize_array(void **array, size_t size, int *capacity) {
-  int new_capacity = *capacity == 0 ? INITIAL_CAPACITY : *capacity * 2;
-
-  void *new_array = realloc(*array, size * new_capacity);
-  if (new_array == NULL) {
-    perror("Realloc failed");
-    return NULL;
-  }
-
-  *capacity = new_capacity;
-  return new_array;
-}
-
 Source *find_or_create_source(Source **sources, int *count,
                             int *capacity, const char *name)
 {
@@ -89,11 +75,9 @@ Source *find_or_create_source(Source **sources, int *count,
   }
 
   if (*count == *capacity) {
-    Source *resized_array = resize_array((void**)sources, sizeof(Source), capacity);
-    if (resized_array == NULL) {
+    if (resize_array((void**)sources, sizeof(Source), capacity) < 0) {
       return NULL;
     }
-    *sources = resized_array;
   }
 
   Source *new_source = &(*sources)[*count];
@@ -118,11 +102,9 @@ Fan *find_or_create_fan(Fan **fans, int *count,
   }
 
   if (*count == *capacity) {
-    Fan *resized_array = resize_array((void**)fans, sizeof(Fan), capacity);
-    if (resized_array == NULL) {
+    if (resize_array((void**)fans, sizeof(Fan), capacity) < 0) {
       return NULL;
     }
-    *fans = resized_array;
   }
 
   Fan *new_fan = &(*fans)[*count];
@@ -158,6 +140,9 @@ int configure_source(Source *source, const char *key, const char *value) {
       perror("strdup failed for sensors_string");
       return -1;
     }
+  }
+  else if (strcmp("Scale", key) == 0) {
+    source->scale = (int)strtol(value, NULL, 0);
   }
   else {
     (void)fprintf(stderr, "Unknown key in source section: %s\n", key);
@@ -268,9 +253,40 @@ void free_config(Config *config) {
   free(config->fans);
 }
 
-int load_config(const char *path, Config *config) {
-  memset(config, 0, sizeof(Config));
+int load_graph(const char *graph_file, Graph *graph) {
+  FILE *file = fopen(graph_file, "r");
+  if (file == NULL) {
+    (void)fprintf(stderr, "Failed to open %s\n", graph_file);
+    return -1;
+  }
 
+  char *line = NULL;
+  size_t len = 0;
+  while (getline(&line, &len, file) != -1) {
+    if (line[0] == '#' || line[0] == '\n') {
+      continue;
+    }
+
+    if (graph->num_points >= graph->capacity) {
+      if (resize_array((void**)&graph->fan_curve, sizeof(int[2]), &graph->capacity) < 0) {
+        return -1;
+      }
+    }
+
+    char *graph_line = line;
+    graph->fan_curve[graph->num_points][0] = (int)strtol(graph_line, &graph_line, 0);
+    graph->fan_curve[graph->num_points][1] = (int)strtol(graph_line, &graph_line, 0);
+    graph->num_points++;
+  }
+
+  if (fclose(file) == EOF) {
+    perror("fclose");
+  }
+
+  return 0;
+}
+
+int load_config(const char *path, Config *config) {
   int ret = ini_parse(path, handler, config);
   switch (ret) {
     case  0:
