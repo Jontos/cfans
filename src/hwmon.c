@@ -7,24 +7,30 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "config_parser.h"
 #include "utils.h"
 
+#define HWMON_FILENAME_BUFFER_SIZE 32
+#define PWM_MODE_AUTO "99"
+
 char *find_hwmon_path(const char *driver, const char *pci_device) {
-  char *hwmon_path = "/sys/class/hwmon";
-  DIR *dirp = opendir(hwmon_path);
+  char *hwmon_parent_dir = "/sys/class/hwmon";
+  DIR *dirp = opendir(hwmon_parent_dir);
   if (dirp == NULL) {
-    (void)fprintf(stderr, "Failed to open %s: %s\n", hwmon_path, strerror(errno));
+    (void)fprintf(stderr, "Failed to open %s: %s\n", hwmon_parent_dir, strerror(errno));
     return NULL;
   }
 
+  char path_buffer[PATH_MAX];
+  char *hwmon_path = NULL;
   while (true) {
     errno = 0;
     struct dirent *direntp = readdir(dirp);
 
     if (errno > 0) {
-      (void)fprintf(stderr, "Failed to read directory %s: %s\n", hwmon_path, strerror(errno));
+      (void)fprintf(stderr, "Failed to read directory %s: %s\n", hwmon_parent_dir, strerror(errno));
       return NULL;
     }
     if (direntp == NULL) {
@@ -34,34 +40,42 @@ char *find_hwmon_path(const char *driver, const char *pci_device) {
       continue;
     }
 
-    char *hwmon_dir = concat_string(hwmon_path, direntp->d_name, '/');
-    char *name_file = concat_string(hwmon_dir, "name", '/');
-    if (hwmon_dir == NULL || name_file == NULL) {
-      (void)fprintf(stderr, "Error creating path for %s\n", direntp->d_name);
-      continue;
+    int ret = snprintf(path_buffer, sizeof(path_buffer), "%s/%s/name", hwmon_parent_dir, direntp->d_name);
+    if (ret < 0 || (size_t)ret >= sizeof(path_buffer)) {
+      perror("snprintf");
+      return NULL;
     }
 
-    char *driver_name = line_from_file(name_file);
+    char *driver_name = line_from_file(path_buffer);
     if (strcmp(driver_name, driver) != 0) {
+      free(driver_name);
       continue;
     }
-    if (pci_device != NULL) {
-      char *device_file = concat_string(hwmon_dir, "device/device", '/');
-      if (device_file == NULL) {
-        (void)fprintf(stderr, "Error creating path for %s/device/device\n", direntp->d_name);
-        continue;
-      }
-      char *device_name = line_from_file(device_file);
-      if (strstr(device_name, pci_device) == NULL) {
-        continue;
-      }
-    }
-    closedir(dirp);
+    free(driver_name);
 
-    return hwmon_dir;
+    if (pci_device != NULL) {
+      ret = snprintf(path_buffer, sizeof(path_buffer), "%s/%s/device/device", hwmon_parent_dir, direntp->d_name);
+      if (ret < 0 || (size_t)ret >= sizeof(path_buffer)) {
+        perror("snprintf");
+        return NULL;
+      }
+      char *device_name = line_from_file(path_buffer);
+      if (strstr(device_name, pci_device) == NULL) {
+        free(device_name);
+        continue;
+      }
+      free(device_name);
+    }
+
+    if (sprintf(path_buffer, "%s/%s", hwmon_parent_dir, direntp->d_name) < 0) {
+      perror("sprintf");
+      return NULL;
+    }
+    hwmon_path = strdup(path_buffer);
+    break;
   }
   closedir(dirp);
-  return NULL;
+  return hwmon_path;
 }
 
 int register_temp_inputs(hwmonSource *source, const char *hwmon_path, const char *sensors_string) {
@@ -71,6 +85,7 @@ int register_temp_inputs(hwmonSource *source, const char *hwmon_path, const char
     return -1;
   }
 
+  char path_buffer[PATH_MAX];
   while (1) {
     errno = 0;
     struct dirent *direntp = readdir(dirp);
@@ -86,15 +101,27 @@ int register_temp_inputs(hwmonSource *source, const char *hwmon_path, const char
       continue;
     }
 
-    char *label_file = concat_string(hwmon_path, direntp->d_name, '/');
-    char *label = line_from_file(label_file);
+    int ret = snprintf(path_buffer, sizeof(path_buffer), "%s/%s", hwmon_path, direntp->d_name);
+    if (ret < 0 || (size_t)ret >= sizeof(path_buffer)) {
+      perror("snprintf");
+      return -1;
+    }
+
+    char *label = line_from_file(path_buffer);
     if (strstr(sensors_string, label) == NULL) {
+      free(label);
       continue;
     }
-    char *delimiter = strchr(direntp->d_name, '_');
-    delimiter[0] = '\0';
-    char *temp_input_file = concat_string(direntp->d_name, "input", '_');
-    char *temp_input_file_path = concat_string(hwmon_path, temp_input_file, '/');
+    free(label);
+
+    char temp_input_file[HWMON_FILENAME_BUFFER_SIZE];
+    int num = (int)strtol(direntp->d_name + strlen("temp"), NULL, 0);
+    ret = snprintf(temp_input_file, sizeof(temp_input_file), "temp%i_input", num);
+    if (ret < 0 || (size_t)ret >= sizeof(temp_input_file)) {
+      perror("snprintf");
+      return -1;
+    }
+    char *temp_input_path = concat_string(hwmon_path, temp_input_file, '/');
 
     if (source->num_inputs == source->input_capacity) {
       if (resize_array((void**)&source->temp_inputs, sizeof(char*), &source->input_capacity) < 0) {
@@ -102,7 +129,7 @@ int register_temp_inputs(hwmonSource *source, const char *hwmon_path, const char
       }
     }
 
-    source->temp_inputs[source->num_inputs] = temp_input_file_path;
+    source->temp_inputs[source->num_inputs] = temp_input_path;
     source->num_inputs++;
   }
   closedir(dirp);
@@ -110,74 +137,121 @@ int register_temp_inputs(hwmonSource *source, const char *hwmon_path, const char
 }
 
 int hwmon_pwm_enable(hwmonFan fan, int mode) {
-  FILE *file = fopen(fan.pwm_enable_file, "r+");
-  if (file == NULL) {
-    (void)fprintf(stderr, "Failed to open %s: %s\n", fan.pwm_enable_file, strerror(errno));
+  int status = -1;
+
+  if (seteuid(0) < 0) {
+    perror("seteuid(0) failed");
     return -1;
   }
 
-  char *flag = "1";
-  if (!mode) {
-    flag = "99";
-  }
-
-  if (fputs(flag, file) == EOF) {
-    (void)fprintf(stderr, "Failed to write to %s: %s\n", fan.pwm_enable_file, strerror(errno));
+  FILE *file = fopen(fan.pwm_enable_file_path, "r+");
+  if (file) {
+    char *flag = "1";
+    if (!mode) {
+      flag = PWM_MODE_AUTO;
+    }
+    if (fputs(flag, file) >= 0) {
+      status = 0;
+    }
+    else {
+      (void)fprintf(stderr, "Failed to write to %s: %s\n", fan.pwm_enable_file_path, strerror(errno));
+    }
     if (fclose(file) == EOF) {
       perror("fclose");
     }
-    return -1;
+  }
+  else {
+    (void)fprintf(stderr, "Failed to open %s: %s\n", fan.pwm_enable_file_path, strerror(errno));
   }
 
-  if (fclose(file) == EOF) {
-    perror("fclose");
+  if (seteuid(getuid()) < 0) {
+    perror("seteuid(getuid) failed");
+    exit(EXIT_FAILURE);
   }
-  return 0;
+
+  return status;
 }
 
-int hwmon_read_temp(hwmonSource source, int *temperatures, int scale) {
+int hwmon_read_temp(hwmonSource source, int scale) {
+  int highest_temp = 0;
   for (int i = 0; i < source.num_inputs; i++) {
     char *temperature_string = line_from_file(source.temp_inputs[i]);
-    temperatures[i] = (int)strtol(temperature_string, NULL, 0) / scale;
+    int temp = (int)strtol(temperature_string, NULL, 0) / scale;
+    free(temperature_string);
+
+    if (temp > highest_temp) {
+      highest_temp = temp;
+    }
   }
-  return 0;
+  return highest_temp;
 }
 
 int hwmon_set_pwm(hwmonFan fan, int value) {
-  FILE *file = fopen(fan.pwm_file, "w");
-  if (file == NULL) {
-    (void)fprintf(stderr, "Failed to open %s: %s\n", fan.pwm_file, strerror(errno));
+  int status = -1;
+
+  if (seteuid(0) < 0) {
+    perror("seteuid(0) failed");
     return -1;
   }
 
-  if (fprintf(file, "%i", value) < 0) {
-    (void)fprintf(stderr, "Failed to write to %s: %s\n", fan.pwm_file, strerror(errno));
+  FILE *file = fopen(fan.pwm_file_path, "w");
+  if (file) {
+    if (fprintf(file, "%i", value) >= 0) {
+      status = 0;
+    }
+    else {
+      (void)fprintf(stderr, "Failed to write to %s: %s\n", fan.pwm_file_path, strerror(errno));
+    }
+    if (fclose(file) == EOF) {
+      perror("fclose");
+    }
+  }
+  else {
+    (void)fprintf(stderr, "Failed to open %s: %s\n", fan.pwm_file_path, strerror(errno));
+  }
+
+  if (seteuid(getuid()) < 0) {
+    perror("seteuid(getuid) failed");
+    exit(EXIT_FAILURE);
+  }
+
+  return status;
+}
+
+int hwmon_fan_init(Fan config, hwmonFan *fan) {
+  char *hwmon_path = find_hwmon_path(config.driver, NULL);
+  fan->pwm_file_path = concat_string(hwmon_path, config.pwm_file, '/');
+  free(hwmon_path);
+  fan->pwm_enable_file_path = concat_string(fan->pwm_file_path, "enable", '_');
+  if (fan->pwm_file_path == NULL || fan->pwm_enable_file_path == NULL) {
     return -1;
   }
-
-  if (fclose(file) == EOF) {
-    perror("fclose");
-  }
-
   return 0;
 }
 
-hwmonFan hwmon_fan_init(Fan fan) {
-  hwmonFan hwmon_fan = {
-    .pwm_file = concat_string(find_hwmon_path(fan.driver, NULL), fan.pwm_file, '/'),
-    .pwm_enable_file = concat_string(hwmon_fan.pwm_file, "enable", '_')
-  };
-  return hwmon_fan;
+int hwmon_source_init(Source config, hwmonSource *source) {
+  char *hwmon_path = find_hwmon_path(config.driver, config.pci_device);
+  if (register_temp_inputs(source, hwmon_path, config.sensors_string) < 0) {
+    free(hwmon_path);
+    return -1;
+  }
+  free(hwmon_path);
+  source->scale = config.scale;
+  return 0;
 }
 
-hwmonSource hwmon_source_init(Source source) {
-  hwmonSource hwmon_source = {
-    .temp_inputs = NULL,
-    .num_inputs = 0,
-    .input_capacity = 0
-  };
-  const char *hwmon_path = find_hwmon_path(source.driver, source.pci_device);
-  register_temp_inputs(&hwmon_source, hwmon_path, source.sensors_string);
+void hwmon_fan_destroy(hwmonFan *fans, const int num_fans) {
+  for (int i = 0; i < num_fans; i++) {
+    free(fans[i].pwm_file_path);
+    free(fans[i].pwm_enable_file_path);
+  }
+}
 
-  return hwmon_source;
+void hwmon_source_destroy(hwmonSource *sources, const int num_sources) {
+  for (int i = 0; i < num_sources; i++) {
+    for (int j = 0; j < sources[i].num_inputs; j++) {
+      free(sources[i].temp_inputs[j]);
+    }
+    free((void*)sources[i].temp_inputs);
+  }
 }

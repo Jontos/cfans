@@ -32,12 +32,8 @@ char *line_from_file(const char *path) {
   char *line = NULL;
   size_t len = 0;
   ssize_t nread = getline(&line, &len, filep);
-  if (fclose(filep) == EOF) {
+  if (fclose(filep) == EOF || nread == -1) {
     (void)fprintf(stderr, "Failed to close %s: %s\n", path, strerror(errno));
-    free(line);
-    return NULL;
-  }
-  if (nread == -1) {
     free(line);
     return NULL;
   }
@@ -48,32 +44,25 @@ char *line_from_file(const char *path) {
 }
 
 char *concat_string(const char *string1, const char *string2, char delimiter) {
-  size_t buffer_size = STRING_BUFFER_SIZE;
+  size_t buffer_size = strlen(string1) + strlen(string2) + 2;
   char *string_buffer = malloc(buffer_size);
   if (string_buffer == NULL) {
     perror("malloc");
     return NULL;
   }
-  while (true) {
-    int ret;
-    if (delimiter == '\0') {
-      ret = snprintf(string_buffer, buffer_size, "%s%s", string1, string2);
-    }
-    else {
-      ret = snprintf(string_buffer, buffer_size, "%s%c%s", string1, delimiter, string2);
-    }
-    if (ret < 0) {
-      return NULL;
-    }
-    if ((size_t)ret < buffer_size) {
-      return string_buffer;
-    }
-    buffer_size = (size_t)ret + 1;
-    char *new_buffer = realloc(string_buffer, buffer_size);
-    if (new_buffer == NULL) {
-      free(string_buffer);
-      return NULL;
-    }
-    string_buffer = new_buffer;
+
+  int ret = 0;
+  if (delimiter == '\0') {
+    ret = snprintf(string_buffer, buffer_size, "%s%s", string1, string2);
   }
+  else {
+    ret = snprintf(string_buffer, buffer_size, "%s%c%s", string1, delimiter, string2);
+  }
+  if (ret < 0) {
+    perror("sprintf");
+    free(string_buffer);
+    return NULL;
+  }
+
+  return string_buffer;
 }

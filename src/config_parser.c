@@ -267,15 +267,15 @@ int load_graph(const char *graph_file, Graph *graph) {
       continue;
     }
 
-    if (graph->num_points >= graph->capacity) {
-      if (resize_array((void**)&graph->fan_curve, sizeof(int[2]), &graph->capacity) < 0) {
+    if (graph->num_points == graph->capacity) {
+      if (resize_array((void**)&graph->points, sizeof(GraphPoint), &graph->capacity) < 0) {
         return -1;
       }
     }
 
     char *graph_line = line;
-    graph->fan_curve[graph->num_points][0] = (int)strtol(graph_line, &graph_line, 0);
-    graph->fan_curve[graph->num_points][1] = (int)strtol(graph_line, &graph_line, 0);
+    graph->points[graph->num_points].temp = (int)strtol(graph_line, &graph_line, 0);
+    graph->points[graph->num_points].fan_speed = (int)strtol(graph_line, &graph_line, 0);
     graph->num_points++;
   }
 
@@ -287,6 +287,7 @@ int load_graph(const char *graph_file, Graph *graph) {
 }
 
 int load_config(const char *path, Config *config) {
+  memset(config, 0, sizeof(Config));
   int ret = ini_parse(path, handler, config);
   switch (ret) {
     case  0:

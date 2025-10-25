@@ -33,7 +33,12 @@ typedef struct {
 } Config;
 
 typedef struct {
-    int (*fan_curve)[2];
+    int temp;
+    int fan_speed;
+} GraphPoint;
+
+typedef struct {
+    GraphPoint *points;
     int num_points;
     int capacity;
 } Graph;

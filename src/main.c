@@ -1,172 +1,189 @@
-#include <errno.h>
 #include <getopt.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "config_parser.h"
+#include "control.h"
 #include "hwmon.h"
 
-int debug = 0;
+#define MILLISECOND (int)1e6
 
 volatile sig_atomic_t keep_running = 1;
 
 void signal_handler(int signum) {
-  keep_running = 0;
+  if (signum == SIGINT || signum == SIGTERM) {
+    keep_running = 0;
+  }
+}
+
+void destroy_hardware(AppContext *app_context) {
+  if (app_context == NULL) {
+    return;
+  }
+
+  if (app_context->sources) {
+    hwmon_source_destroy(app_context->sources, app_context->initialised_sources);
+  }
+  if (app_context->fans) {
+    hwmon_fan_destroy(app_context->fans, app_context->initialised_fans);
+  }
+
+  free(app_context->sources);
+  free(app_context->fans);
+  free(app_context->graph.points);
+}
+
+int init_hardware(Config *config, AppContext *app_context) {
+  memset(app_context, 0, sizeof(AppContext));
+  app_context->num_sources = config->num_sources;
+  app_context->num_fans = config->num_fans;
+
+  if (load_graph(config->graph_file, &app_context->graph) < 0) {
+    (void)fprintf(stderr, "Error loading graph file: %s\n", config->graph_file);
+    destroy_hardware(app_context);
+    return -1;
+  }
+
+  app_context->sources = calloc(app_context->num_sources, sizeof(hwmonSource));
+  if (app_context->sources == NULL) {
+    perror("malloc for sources failed");
+    destroy_hardware(app_context);
+    return -1;
+  }
+  for (int i = 0; i < config->num_sources; i++) {
+    if (hwmon_source_init(config->sources[i], &app_context->sources[i]) < 0) {
+      (void)fprintf(stderr, "Failed to initialise source: %s\n", config->sources[i].name);
+      destroy_hardware(app_context);
+      return -1;
+    }
+    app_context->initialised_sources++;
+  }
+
+  app_context->fans = calloc(config->num_fans, sizeof(hwmonFan));
+  if (app_context->fans == NULL) {
+    perror("malloc for fans failed");
+    destroy_hardware(app_context);
+    return -1;
+  }
+  for (int i = 0; i < config->num_fans; i++) {
+    if (hwmon_fan_init(config->fans[i], &app_context->fans[i]) < 0) {
+      (void)fprintf(stderr, "Failed to initialise fan: %s\n", config->fans[i].name);
+      destroy_hardware(app_context);
+      return -1;
+    }
+    app_context->initialised_fans++;
+  }
+
+  return 0;
+}
+
+void run_main_loop(AppContext *app_context, Config *config) {
+  long nanoseconds = (long)config->interval * MILLISECOND;
+  struct timespec interval = { .tv_nsec = nanoseconds, .tv_sec = 0 };
+
+  while (keep_running) {
+    int highest_temp = get_highest_temp(app_context);
+    int temp_average = moving_average_update(app_context, highest_temp);
+
+    int target_fan_percent = calculate_fan_percent(app_context, highest_temp);
+
+    for (int i = 0; i < app_context->num_fans; i++) {
+      int target_pwm_value = calculate_pwm_value(target_fan_percent, config->fans[i].min_pwm, config->fans[i].max_pwm);
+      if (target_pwm_value == app_context->fans[i].last_pwm_value) {
+        break;
+      }
+      if (target_pwm_value > app_context->fans[i].last_pwm_value) {
+        hwmon_set_pwm(app_context->fans[i], ++app_context->fans[i].last_pwm_value);
+      }
+      else {
+        hwmon_set_pwm(app_context->fans[i], --app_context->fans[i].last_pwm_value);
+      }
+    }
+
+    if (app_context->debug) {
+      printf("\033[2J\033[Hhighest_temp:       %i\n", highest_temp);
+                   printf("temp_average:       %i\n", temp_average);
+                   printf("target_fan_percent: %i\n", target_fan_percent);
+      for (int i = 0; i < app_context->num_fans; i++) {
+                   printf("target_pwm_value:   %i\n", calculate_pwm_value(target_fan_percent, config->fans[i].min_pwm, config->fans[i].max_pwm));
+                   printf("last_pwm_value      %i\n", app_context->fans[i].last_pwm_value);
+      }
+      if (fflush(stdout) == EOF) {
+        perror("fflush");
+      }
+    }
+
+    nanosleep(&interval, NULL);
+  }
 }
 
 int main(int argc, char *argv[]) {
 
-  signal(SIGINT, signal_handler);
-  signal(SIGTERM, signal_handler);
+  if (signal(SIGINT, signal_handler) == SIG_ERR) {
+    perror("signal");
+  }
+  if (signal(SIGTERM, signal_handler) == SIG_ERR) {
+    perror("signal");
+  }
+
+  if (seteuid(getuid()) < 0) {
+    perror("seteuid failed");
+    return EXIT_FAILURE;
+  }
 
   char *config_path = "/etc/cfans/fancontrol.conf";
 
   int opt;
-  while ((opt = getopt(argc, argv, "c:d")) != -1) {
+  while ((opt = getopt(argc, argv, "c:")) != -1) {
     switch (opt) {
       case 'c':
         config_path = optarg;
         break;
-      case 'd':
-        debug = 1;
-        break;
-      case '?':
-        fprintf(stderr, "Usage: %s [-c CONFIG_FILE] [-d]\n", argv[0]);
-        exit(EXIT_FAILURE);
+      default:
+        (void)fprintf(stderr, "Usage: %s [-c CONFIG_FILE]\n", argv[0]);
+        return EXIT_FAILURE;
     } 
   }
 
-  Config config = {0};
+  Config config;
   if (load_config(config_path, &config) < 0) {
     (void)fprintf(stderr, "Error loading config file: %s\n", config_path);
-    exit(EXIT_FAILURE);
+    return EXIT_FAILURE;
   }
 
-  Graph graph = {0};
-  if (load_graph(config.graph_file, &graph) < 0) {
-    (void)fprintf(stderr, "Error loading graph file: %s\n", config.graph_file);
-    exit(EXIT_FAILURE);
+  AppContext app_context;
+  if (init_hardware(&config, &app_context) < 0) {
+    (void)fprintf(stderr, "Failed to initialise hardware\n");
+    free_config(&config);
+    return EXIT_FAILURE;
   }
 
-  int cpu_temp;
-  int gpu_temp;
-
-  int prev_vals[config.average];
-  int buf_slot = config.average;
-  int first_run = 1;
-  int last_val = 0;
-  int written_val = -1;
-
-  int *temperatures[config.num_sources];
-  hwmonSource sources[config.num_sources];
-  for (int i = 0; i < config.num_sources; i++) {
-    sources[i] = hwmon_source_init(config.sources[i]);
-    temperatures[i] = malloc(sources[i].num_inputs * sizeof(int));
+  if (moving_average_init(&app_context, config.average) < 0) {
+    (void)fprintf(stderr, "Failed to initialise average buffer\n");
+    return EXIT_FAILURE;
   }
 
-  hwmonFan fans[config.num_fans];
-  for (int i = 0; i < config.num_fans; i++) {
-    fans[i] = hwmon_fan_init(config.fans[i]);
-    hwmon_pwm_enable(fans[i], 1);
+  if (getenv("DEBUG") != NULL) {
+    app_context.debug = true;
+  }
+  else {
+    app_context.debug = false;
   }
 
+  run_main_loop(&app_context, &config);
 
-  if (debug) {
-    printf("\n%s:\n", config.graph_file);
-    for (int i = 0; i < graph.num_points; i++) {
-      for (int j = 0; j < 2; j++) {
-        printf("%i ", graph.fan_curve[i][j]);
-      }
-      printf("\n");
-    }
-    printf("Total points: %i\n\n", graph.num_points);
+  // Restore automatic fan control
+  for (int i = 0; i < app_context.num_fans; i++) {
+    hwmon_pwm_enable(app_context.fans[i], 0);
   }
-
-  struct timespec interval = { .tv_nsec = 0, .tv_sec = 1 };
-
-  while (keep_running) {
-    // Reset averaging buffer index
-    if (buf_slot % config.average == 0) {
-      buf_slot = 0;
-    }
-
-    int highest_temp = 0;
-    for (int i = 0; i < config.num_sources; i++) {
-      hwmon_read_temp(sources[i], temperatures[i], config.sources[i].scale);
-      for (int j = 0; j < sources[i].num_inputs; j++) {
-        if (temperatures[i][j] > highest_temp) {
-          highest_temp = temperatures[i][j];
-        }
-      }
-    }
-
-    // Populate averaging buffer with initial temp for first run
-    if (first_run == 1) {
-      for (int i = 0; i < config.average; i++) {
-        prev_vals[i] = highest_temp;
-      }
-    }
-    else {
-      prev_vals[buf_slot] = highest_temp;
-    }
-
-    // Calculate average of previous values
-    int total_vals = 0;
-    for (int i = 0; i < config.average; i++) {
-      total_vals += prev_vals[i];
-    }
-    int avg_temp = total_vals / config.average;
-
-    buf_slot++;
-
-    for (int i = 0; i < graph.num_points; i++) {
-      if (avg_temp < graph.fan_curve[i][0]) {
-        int delta_from_node = avg_temp - graph.fan_curve[i-1][0];
-        int percent_diff = graph.fan_curve[i][1] - graph.fan_curve[i-1][1];
-        int temp_diff = graph.fan_curve[i][0] - graph.fan_curve[i-1][0];
-        int fan_percent = delta_from_node * percent_diff / temp_diff + graph.fan_curve[i-1][1];
-
-        for (int i = 0; i < config.num_fans; i++) {
-          int pwm_range = config.fans[i].max_pwm - config.fans[i].min_pwm;
-          int pwm_val = fan_percent == 0 ? 0 : pwm_range / 100 * fan_percent + config.fans[i].min_pwm;
-
-          if (first_run == 1) {
-            last_val = pwm_val;
-            first_run = 0;
-          }
-          else if (pwm_val > last_val) {
-            last_val++;
-          }
-          else if (pwm_val < last_val) {
-            last_val--;
-          }
-
-          if (debug) {
-            printf("\ravg: %i fan: %i pwm: %i last: %i       ",
-                   avg_temp, fan_percent, pwm_val, last_val);
-            fflush(stdout);
-          }
-
-          if (last_val != written_val) {
-            hwmon_set_pwm(fans[i], last_val);
-            written_val = last_val;
-          }
-          break;
-        }
-      } 
-    }
-    nanosleep(&interval, NULL);
-  }
-  // Run cleanup..
-  free(graph.fan_curve);
+  destroy_hardware(&app_context);
   free_config(&config);
 
-  printf("\nResetting automatic fan control..\n");
-  for (int i = 0; i < config.num_fans; i++) {
-    hwmon_pwm_enable(fans[i], 0);
-  }
+  return EXIT_SUCCESS;
 }
