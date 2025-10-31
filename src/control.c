@@ -7,7 +7,7 @@
 int get_highest_temp(AppContext *app_context) {
   int highest_temp = 0;
   for (int i = 0; i < app_context->num_sources; i++) {
-    int temp = hwmon_read_temp(app_context->sources[i], app_context->sources[i].scale);
+    int temp = hwmon_read_temp(&app_context->sources[i]);
     if (temp > highest_temp) {
       highest_temp = temp;
     }

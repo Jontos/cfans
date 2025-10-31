@@ -1,6 +1,8 @@
 #ifndef CONTROL_H
 #define CONTROL_H
 
+#include <stdbool.h>
+
 #include "config_parser.h"
 #include "hwmon.h"
 
