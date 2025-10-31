@@ -1,30 +1,34 @@
 #ifndef HWMON_H
 #define HWMON_H
 
-#include <stdbool.h>
+#include <systemd/sd-device.h>
 
 #include "config_parser.h"
 
 typedef struct {
+    sd_device_enumerator *enumerator;
+    sd_device *device;
     char **temp_inputs;
-    int scale;
     int num_inputs;
     int input_capacity;
+    int scale;
 } hwmonSource;
 
 typedef struct {
-    char *pwm_file_path;
-    char *pwm_enable_file_path;
+    sd_device_enumerator *enumerator;
+    sd_device *device;
+    char *pwm_file;
+    char *pwm_enable_file;
 
     int last_pwm_value;
 } hwmonFan;
 
-int hwmon_source_init(Source config, hwmonSource *source);
-int hwmon_fan_init(Fan config, hwmonFan *fan);
+int hwmon_source_init(Source *config, hwmonSource *source);
+int hwmon_fan_init(Fan *config, hwmonFan *fan);
 
-int hwmon_pwm_enable(hwmonFan fan, int mode);
-int hwmon_read_temp(hwmonSource source, int scale);
-int hwmon_set_pwm(hwmonFan fan, int value);
+int hwmon_read_temp(hwmonSource *source);
+int hwmon_set_pwm(hwmonFan *fan, int pwm_value);
+int hwmon_restore_auto_control(hwmonFan *fan);
 
 void hwmon_source_destroy(hwmonSource *sources, int num_sources);
 void hwmon_fan_destroy(hwmonFan *fans, int num_fans);
