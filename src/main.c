@@ -57,7 +57,7 @@ int init_hardware(Config *config, AppContext *app_context) {
     return -1;
   }
   for (int i = 0; i < config->num_sources; i++) {
-    if (hwmon_source_init(config->sources[i], &app_context->sources[i]) < 0) {
+    if (hwmon_source_init(&config->sources[i], &app_context->sources[i]) < 0) {
       (void)fprintf(stderr, "Failed to initialise source: %s\n", config->sources[i].name);
       destroy_hardware(app_context);
       return -1;
@@ -72,7 +72,7 @@ int init_hardware(Config *config, AppContext *app_context) {
     return -1;
   }
   for (int i = 0; i < config->num_fans; i++) {
-    if (hwmon_fan_init(config->fans[i], &app_context->fans[i]) < 0) {
+    if (hwmon_fan_init(&config->fans[i], &app_context->fans[i]) < 0) {
       (void)fprintf(stderr, "Failed to initialise fan: %s\n", config->fans[i].name);
       destroy_hardware(app_context);
       return -1;
@@ -99,10 +99,10 @@ void run_main_loop(AppContext *app_context, Config *config) {
         break;
       }
       if (target_pwm_value > app_context->fans[i].last_pwm_value) {
-        hwmon_set_pwm(app_context->fans[i], ++app_context->fans[i].last_pwm_value);
+        hwmon_set_pwm(&app_context->fans[i], ++app_context->fans[i].last_pwm_value);
       }
       else {
-        hwmon_set_pwm(app_context->fans[i], --app_context->fans[i].last_pwm_value);
+        hwmon_set_pwm(&app_context->fans[i], --app_context->fans[i].last_pwm_value);
       }
     }
 
@@ -180,7 +180,7 @@ int main(int argc, char *argv[]) {
 
   // Restore automatic fan control
   for (int i = 0; i < app_context.num_fans; i++) {
-    hwmon_pwm_enable(app_context.fans[i], 0);
+    hwmon_restore_auto_control(&app_context.fans[i]);
   }
   destroy_hardware(&app_context);
   free_config(&config);
