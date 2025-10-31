@@ -1,8 +1,8 @@
 CC = gcc
-PKGS = inih
+PKGS = inih libsystemd
 
 LDLIBS = $(shell pkgconf --libs $(PKGS))
-CFLAGS = -Wall -Wextra
+CFLAGS = -Wall -Wextra -MMD -MP
 
 ifeq ($(DEBUG), 1)
 	CFLAGS += -g
@@ -30,19 +30,23 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 
 .PHONY: clean all install uninstall
 
-# Install the binary to /usr/local/bin with correct permissions
+# Install the binary to /usr/local/bin.
+# Note: This should be done by a package manager.
+# The user running make install must have write permissions to the destination.
 install: $(TARGET)
-	@echo "Installing to /usr/local/bin..."
-	sudo mkdir -p /usr/local/bin
-	sudo cp $(TARGET) /usr/local/bin/
-	sudo chown root:root /usr/local/bin/$(notdir $(TARGET))
-	sudo chmod u+s /usr/local/bin/$(notdir $(TARGET))
+	@echo "Installing $(TARGET) to /usr/local/bin..."
+	@echo "You may need to run this with sudo."
+	mkdir -p /usr/local/bin
+	cp $(TARGET) /usr/local/bin/
+	chown root:root /usr/local/bin/$(notdir $(TARGET))
 	@echo "Installation complete."
+	@echo "WARNING: The setuid bit is no longer set. You must configure permissions (e.g., with udev rules) for this program to access hardware."
 
-# Remove the installed binary
+# Uninstall the binary from /usr/local/bin.
 uninstall:
 	@echo "Uninstalling from /usr/local/bin..."
-	sudo rm -f /usr/local/bin/$(notdir $(TARGET))
+	@echo "You may need to run this with sudo."
+	rm -f /usr/local/bin/$(notdir $(TARGET))
 	@echo "Uninstallation complete."
 
 clean:
