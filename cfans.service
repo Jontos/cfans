@@ -1,0 +1,13 @@
+[Unit]
+Description=Fan control program written in pure C
+After=lm_sensors.service
+
+[Service]
+User=cfans
+Group=cfans
+
+Type=exec
+ExecStart=/usr/local/bin/cfans
+
+[Install]
+WantedBy=multi-user.target
