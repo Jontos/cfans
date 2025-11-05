@@ -94,15 +94,10 @@ void run_main_loop(AppContext *app_context, Config *config) {
     float target_fan_percent = calculate_fan_percent(app_context, temp_average);
 
     for (int i = 0; i < app_context->num_fans; i++) {
-      int target_pwm_value = calculate_pwm_value(target_fan_percent, config->fans[i].min_pwm, config->fans[i].max_pwm);
-      if (target_pwm_value == app_context->fans[i].last_pwm_value) {
-        continue;
-      }
-      if (target_pwm_value > app_context->fans[i].last_pwm_value) {
-        hwmon_set_pwm(&app_context->fans[i], ++app_context->fans[i].last_pwm_value);
-      }
-      else {
-        hwmon_set_pwm(&app_context->fans[i], --app_context->fans[i].last_pwm_value);
+      int pwm_value = calculate_pwm_value(target_fan_percent, config->fans[i].min_pwm, config->fans[i].max_pwm);
+      if (pwm_value != app_context->fans[i].last_pwm_value) {
+        hwmon_set_pwm(&app_context->fans[i], pwm_value);
+        app_context->fans[i].last_pwm_value = pwm_value;
       }
     }
 
