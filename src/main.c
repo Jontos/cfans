@@ -88,15 +88,15 @@ void run_main_loop(AppContext *app_context, Config *config) {
   struct timespec interval = { .tv_nsec = nanoseconds, .tv_sec = 0 };
 
   while (keep_running) {
-    int highest_temp = get_highest_temp(app_context);
-    int temp_average = moving_average_update(app_context, highest_temp);
+    float highest_temp = get_highest_temp(app_context);
+    float temp_average = moving_average_update(app_context, highest_temp);
 
-    int target_fan_percent = calculate_fan_percent(app_context, highest_temp);
+    float target_fan_percent = calculate_fan_percent(app_context, temp_average);
 
     for (int i = 0; i < app_context->num_fans; i++) {
       int target_pwm_value = calculate_pwm_value(target_fan_percent, config->fans[i].min_pwm, config->fans[i].max_pwm);
       if (target_pwm_value == app_context->fans[i].last_pwm_value) {
-        break;
+        continue;
       }
       if (target_pwm_value > app_context->fans[i].last_pwm_value) {
         hwmon_set_pwm(&app_context->fans[i], ++app_context->fans[i].last_pwm_value);
@@ -107,9 +107,9 @@ void run_main_loop(AppContext *app_context, Config *config) {
     }
 
     if (app_context->debug) {
-      printf("\033[2J\033[Hhighest_temp:       %i\n", highest_temp);
-                   printf("temp_average:       %i\n", temp_average);
-                   printf("target_fan_percent: %i\n", target_fan_percent);
+      printf("\033[2J\033[Hhighest_temp:       %f\n", highest_temp);
+                   printf("temp_average:       %f\n", temp_average);
+                   printf("target_fan_percent: %f\n", target_fan_percent);
       for (int i = 0; i < app_context->num_fans; i++) {
                    printf("target_pwm_value:   %i\n", calculate_pwm_value(target_fan_percent, config->fans[i].min_pwm, config->fans[i].max_pwm));
                    printf("last_pwm_value      %i\n", app_context->fans[i].last_pwm_value);
@@ -132,12 +132,7 @@ int main(int argc, char *argv[]) {
     perror("signal");
   }
 
-  if (seteuid(getuid()) < 0) {
-    perror("seteuid failed");
-    return EXIT_FAILURE;
-  }
-
-  char *config_path = "/etc/cfans/fancontrol.conf";
+  char *config_path = "/etc/cfans/config.ini";
 
   int opt;
   while ((opt = getopt(argc, argv, "c:")) != -1) {

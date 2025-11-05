@@ -7,7 +7,7 @@
 #include "hwmon.h"
 
 typedef struct {
-  int *slot;
+  float *slot;
   int slot_index;
   int num_slots;
 } MovingAverage;
@@ -29,12 +29,12 @@ typedef struct {
 
 } AppContext;
 
-int get_highest_temp(AppContext *app_context);
+float get_highest_temp(AppContext *app_context);
 
 int moving_average_init(AppContext *app_context, int average);
-int moving_average_update(AppContext *app_context, int current_temp);
+float moving_average_update(AppContext *app_context, float current_temp);
 
-int calculate_fan_percent(AppContext *app_context, int temperature);
-int calculate_pwm_value(int fan_percent, int min_pwm, int max_pwm);
+float calculate_fan_percent(AppContext *app_context, float temperature);
+int calculate_pwm_value(float fan_percent, int min_pwm, int max_pwm);
 
 #endif

@@ -11,7 +11,7 @@ typedef struct {
     char **temp_inputs;
     int num_inputs;
     int input_capacity;
-    int scale;
+    float scale;
 } hwmonSource;
 
 typedef struct {
@@ -26,7 +26,7 @@ typedef struct {
 int hwmon_source_init(Source *config, hwmonSource *source);
 int hwmon_fan_init(Fan *config, hwmonFan *fan);
 
-int hwmon_read_temp(hwmonSource *source);
+float hwmon_read_temp(hwmonSource *source);
 int hwmon_set_pwm(hwmonFan *fan, int pwm_value);
 int hwmon_restore_auto_control(hwmonFan *fan);
 

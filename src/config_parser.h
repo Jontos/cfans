@@ -6,7 +6,7 @@ typedef struct {
     char *driver;
     char *pci_device;
     char *sensors_string;
-    int scale;
+    float scale;
 } Source;
 
 typedef struct {
@@ -33,8 +33,8 @@ typedef struct {
 } Config;
 
 typedef struct {
-    int temp;
-    int fan_speed;
+    float temp;
+    float fan_speed;
 } GraphPoint;
 
 typedef struct {
