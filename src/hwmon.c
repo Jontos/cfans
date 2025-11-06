@@ -155,13 +155,7 @@ float hwmon_read_temp(hwmonSource *source) {
 }
 
 int hwmon_set_pwm(hwmonFan *fan, int pwm_value) {
-  char value[HWMON_MAX_PWM_VALUE];
-  int ret = snprintf(value, sizeof(value), "%i", pwm_value);
-  if (ret < 0 || (size_t)ret >= sizeof(value)) {
-    perror("snprintf");
-  }
-
-  if (sd_device_set_sysattr_value(fan->device, fan->pwm_file, value) != 0) {
+  if (sd_device_set_sysattr_valuef(fan->device, fan->pwm_file, "%i", pwm_value) != 0) {
     (void)fprintf(stderr, "Error setting PWM value for %s\n", fan->pwm_file);
     return -1;
   }
