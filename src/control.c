@@ -21,7 +21,7 @@ int moving_average_init(AppContext *app_context, int average) {
   MovingAverage *buffer = &app_context->average_buffer;
 
   buffer->slot = calloc(average, sizeof(float));
-  if (!buffer->slot) {
+  if (buffer->slot == NULL) {
     perror("calloc");
     return -1;
   }
@@ -65,16 +65,33 @@ float linearly_interpolate(float temperature, GraphPoint *start, GraphPoint *end
 
 float calculate_fan_percent(AppContext *app_context, float temperature) {
   Graph *graph = &app_context->graph;
+  int high = graph->num_points - 1;
+  int low = 0;
+  int closest = graph->num_points;
 
-  for (int i = 0; i < graph->num_points; i++) {
-    if (temperature < graph->points[i].temp) {
-      if (i == 0) {
-        return graph->points[0].fan_speed;
-      }
-      return linearly_interpolate(temperature, &graph->points[i-1], &graph->points[i]);
+  if (temperature <= graph->points[0].temp) {
+    return graph->points[0].fan_speed;
+  }
+  if (temperature >= graph->points[graph->num_points-1].temp) {
+    return graph->points[graph->num_points-1].fan_speed;
+  }
+
+  while (low <= high) {
+    int mid = low + ((high - low) / 2);
+    if (temperature == graph->points[mid].temp) {
+      return graph->points[mid].fan_speed;
+    }
+    if (temperature < graph->points[mid].temp) {
+      closest = mid;
+      high = mid - 1;
+    }
+    else {
+      low = mid + 1;
     }
   }
-  return graph->points[graph->num_points-1].fan_speed;
+
+  return
+  linearly_interpolate(temperature, &graph->points[closest-1], &graph->points[closest]);
 }
 
 int calculate_pwm_value(float fan_percent, int min_pwm, int max_pwm) {
