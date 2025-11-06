@@ -30,7 +30,7 @@ PKGS = libsystemd
 # Use LDFLAGS for linker-specific flags
 # Use LDLIBS for libraries to link
 CFLAGS = -Wall -Wextra
-CPPFLAGS = -MMD -MP -I$(EXT_DIR)/inih -DINI_CALL_HANDLER_ON_NEW_SECTION=1
+CPPFLAGS = -MMD -MP -I$(EXT_DIR)/inih -DINI_CALL_HANDLER_ON_NEW_SECTION=1 -DINI_STOP_ON_FIRST_ERROR=1
 LDFLAGS =
 LDLIBS = $(shell pkgconf --libs $(PKGS))
 
