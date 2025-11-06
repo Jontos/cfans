@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,6 +61,8 @@ void *create_object(void **object, int *count, int *capacity, size_t obj_size) {
 }
 
 int action_taker(void *member_ptr, ActionType action, const char *value) {
+  char *endptr;
+  errno = 0;
   switch (action) {
     case DUPSTR:
       *(char**)member_ptr = strdup(value);
@@ -69,10 +72,24 @@ int action_taker(void *member_ptr, ActionType action, const char *value) {
       }
       return 0;
     case STRTOL:
-      *(int*)member_ptr = (int)strtol(value, NULL, 0);
+      *(int*)member_ptr = (int)strtol(value, &endptr, 0);
+      if (value == endptr) {
+        (void)fprintf(stderr, "No digits found in value: %s\n", value);
+        return -1;
+      }
+      if (errno != 0) {
+        perror("strtol");
+      }
       return 0;
     case STRTOF:
-      *(float*)member_ptr = strtof(value, NULL);
+      *(float*)member_ptr = strtof(value, &endptr);
+      if (value == endptr) {
+        (void)fprintf(stderr, "No digits found in value: %s\n", value);
+        return -1;
+      }
+      if (errno != 0) {
+        perror("strtof");
+      }
       return 0;
   }
   return -1;

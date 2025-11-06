@@ -121,10 +121,16 @@ void run_main_loop(AppContext *app_context, Config *config) {
 
 int main(int argc, char *argv[]) {
 
-  if (signal(SIGINT, signal_handler) == SIG_ERR) {
+  struct sigaction sigact = {
+    .sa_handler = signal_handler,
+    .sa_flags = SA_RESTART
+  };
+  sigemptyset(&sigact.sa_mask);
+
+  if (sigaction(SIGINT, &sigact, NULL) == -1) {
     perror("signal");
   }
-  if (signal(SIGTERM, signal_handler) == SIG_ERR) {
+  if (sigaction(SIGTERM, &sigact, NULL) == -1) {
     perror("signal");
   }
 

@@ -67,7 +67,6 @@ float calculate_fan_percent(AppContext *app_context, float temperature) {
   Graph *graph = &app_context->graph;
   int high = graph->num_points - 1;
   int low = 0;
-  int closest = graph->num_points;
 
   if (temperature <= graph->points[0].temp) {
     return graph->points[0].fan_speed;
@@ -82,7 +81,6 @@ float calculate_fan_percent(AppContext *app_context, float temperature) {
       return graph->points[mid].fan_speed;
     }
     if (temperature < graph->points[mid].temp) {
-      closest = mid;
       high = mid - 1;
     }
     else {
@@ -91,7 +89,7 @@ float calculate_fan_percent(AppContext *app_context, float temperature) {
   }
 
   return
-  linearly_interpolate(temperature, &graph->points[closest-1], &graph->points[closest]);
+  linearly_interpolate(temperature, &graph->points[high], &graph->points[low]);
 }
 
 int calculate_pwm_value(float fan_percent, int min_pwm, int max_pwm) {
