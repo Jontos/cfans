@@ -30,6 +30,8 @@ typedef struct {
     Fan *fans;
     int num_fans;
     int fan_capacity;
+
+    void *current_section;
 } Config;
 
 typedef struct {

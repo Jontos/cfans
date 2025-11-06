@@ -131,7 +131,7 @@ int hwmon_fan_init(Fan *config, hwmonFan *fan) {
     return -1;
   }
   fan->pwm_file = config->pwm_file;
-  fan->pwm_enable_file = concat_string(config->pwm_file, "enable", '_');
+  asprintf(&fan->pwm_enable_file, "%s_enable", config->pwm_file);
 
   return 0;
 }

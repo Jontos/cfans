@@ -1,5 +1,3 @@
-#include <ctype.h>
-#include <ini.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,45 +5,20 @@
 
 #include "config_parser.h"
 #include "utils.h"
+#include "ini.h"
 
-typedef enum {
-  SECTION_UNKNOWN,
-  SECTION_GENERAL,
-  SECTION_SOURCE,
-  SECTION_FAN
-} SectionType;
-
-typedef struct {
-  SectionType type;
-  const char *name;
-} ParsedSection;
-
-ParsedSection parse_section(const char *section) {
-  ParsedSection result = { .type = SECTION_UNKNOWN, .name = NULL };
-
-  char *delimiter = strchr(section, ':');
-  if (delimiter == NULL) {
-    if (strcmp(section, "General") == 0) {
-      result.type = SECTION_GENERAL;
+void *create_object(void **object, int *count, int *capacity, size_t obj_size) {
+  if (*count == *capacity) {
+    if (resize_array(object, obj_size, capacity) < 0) {
+      return NULL;
     }
-    return result;
   }
 
-  char *name = delimiter + 1;
-  while (*name && isspace(*name)) {
-    name++;
-  }
+  void *new_object = (char*)(*object) + (*count * obj_size);
 
-  if (strncmp(section, "Source", strlen("Source")) == 0) {
-    result.type = SECTION_SOURCE;
-    result.name = name;
-  }
-  else if (strncmp(section, "Fan", strlen("Fan")) == 0) {
-    result.type = SECTION_FAN;
-    result.name = name;
-  }
-
-  return result;
+  memset(new_object, 0, obj_size);
+  (*count)++;
+  return new_object;
 }
 
 int configure_general(Config *config, const char *name, const char *value) {
@@ -65,62 +38,15 @@ int configure_general(Config *config, const char *name, const char *value) {
   return 0;
 }
 
-Source *find_or_create_source(Source **sources, int *count,
-                            int *capacity, const char *name)
-{
-  for (int i = 0; i < *count; i++) {
-    if (strcmp((*sources)[i].name, name) == 0) {
-      return &(*sources)[i];
-    }
-  }
-
-  if (*count == *capacity) {
-    if (resize_array((void**)sources, sizeof(Source), capacity) < 0) {
-      return NULL;
-    }
-  }
-
-  Source *new_source = &(*sources)[*count];
-
-  memset(new_source, 0, sizeof(Source));
-  new_source->name = strdup(name);
-  if (new_source->name == NULL) {
-    perror("strdup failed for new source name");
-    return NULL;
-  }
-  (*count)++;
-  return new_source;
-}
-
-Fan *find_or_create_fan(Fan **fans, int *count,
-                            int *capacity, const char *name)
-{
-  for (int i = 0; i < *count; i++) {
-    if (strcmp((*fans)[i].name, name) == 0) {
-      return &(*fans)[i];
-    }
-  }
-
-  if (*count == *capacity) {
-    if (resize_array((void**)fans, sizeof(Fan), capacity) < 0) {
-      return NULL;
-    }
-  }
-
-  Fan *new_fan = &(*fans)[*count];
-
-  memset(new_fan, 0, sizeof(Fan));
-  new_fan->name = strdup(name);
-  if (new_fan->name == NULL) {
-    perror("strdup failed for new fan name");
-    return NULL;
-  }
-  (*count)++;
-  return new_fan;
-}
-
 int configure_source(Source *source, const char *key, const char *value) {
-  if (strcmp("Driver", key) == 0) {
+  if (strcmp("Name", key) == 0) {
+    source->name = strdup(value);
+    if (source->name == NULL) {
+      perror("strdup failed for name");
+      return -1;
+    }
+  }
+  else if (strcmp("Driver", key) == 0) {
     source->driver = strdup(value);
     if (source->driver == NULL) {
       perror("strdup failed for driver");
@@ -142,7 +68,7 @@ int configure_source(Source *source, const char *key, const char *value) {
     }
   }
   else if (strcmp("Scale", key) == 0) {
-    source->scale = (int)strtol(value, NULL, 0);
+    source->scale = strtof(value, NULL);
   }
   else {
     (void)fprintf(stderr, "Unknown key in source section: %s\n", key);
@@ -152,7 +78,14 @@ int configure_source(Source *source, const char *key, const char *value) {
 }
 
 int configure_fan(Fan *fan, const char *key, const char *value) {
-  if (strcmp("Driver", key) == 0) {
+  if (strcmp("Name", key) == 0) {
+    fan->name = strdup(value);
+    if (fan->name == NULL) {
+      perror("strdup failed for name");
+      return -1;
+    }
+  }
+  else if (strcmp("Driver", key) == 0) {
     fan->driver = strdup(value);
     if (fan->driver == NULL) {
       perror("strdup failed for driver");
@@ -191,45 +124,46 @@ static int handler(void *user, const char *section, const char *name,
 {
   Config *config = user;
 
-  ParsedSection psection = parse_section(section);
-
-  switch (psection.type) {
-    case SECTION_GENERAL:
-      if (configure_general(config, name, value) < 0) {
-        return 0;
-      }
-      break;
-    case SECTION_SOURCE:
-      Source *current_source = find_or_create_source(
-        &config->sources,
+  if (strcmp(section, "Source") == 0) {
+    if (name == NULL && value == NULL) {
+      config->current_section = create_object(
+        (void**)&config->sources,
         &config->num_sources,
         &config->source_capacity,
-        psection.name
+        sizeof(Source)
       );
-      if (current_source == NULL) {
+      if (config->current_section == NULL) {
         return 0;
       }
-      if (configure_source(current_source, name, value) < 0) {
+    }
+    else {
+      if (configure_source(config->current_section, name, value) < 0) {
         return 0;
       }
-      break;
-    case SECTION_FAN:
-      Fan *current_fan = find_or_create_fan(
-        &config->fans,
+    }
+  }
+  else if (strcmp(section, "Fan") == 0) {
+    if (name == NULL && value == NULL) {
+      config->current_section = create_object(
+        (void**)&config->fans,
         &config->num_fans,
         &config->fan_capacity,
-        psection.name
+        sizeof(Fan)
       );
-      if (current_fan == NULL) {
+      if (config->current_section == NULL) {
         return 0;
       }
-      if (configure_fan(current_fan, name, value) < 0) {
+    }
+    else {
+      if (configure_fan(config->current_section, name, value) < 0) {
         return 0;
       }
-      break;
-    case SECTION_UNKNOWN:
-      (void)fprintf(stderr, "Config entry \"%s\" missing section!\n", name);
-      break;
+    }
+  }
+  else {
+    if (configure_general(config, name, value) < 0) {
+      return 0;
+    }
   }
 
   return 1;
@@ -254,6 +188,7 @@ void free_config(Config *config) {
 }
 
 int load_graph(const char *graph_file, Graph *graph) {
+  int ret = 0;
   FILE *file = fopen(graph_file, "r");
   if (file == NULL) {
     (void)fprintf(stderr, "Failed to open %s\n", graph_file);
@@ -262,7 +197,8 @@ int load_graph(const char *graph_file, Graph *graph) {
 
   char *line = NULL;
   size_t len = 0;
-  while (getline(&line, &len, file) != -1) {
+  ssize_t read;
+  while ((read = getline(&line, &len, file)) != -1) {
     if (line[0] == '#' || line[0] == '\n') {
       continue;
     }
@@ -274,16 +210,22 @@ int load_graph(const char *graph_file, Graph *graph) {
     }
 
     char *graph_line = line;
-    graph->points[graph->num_points].temp = (int)strtol(graph_line, &graph_line, 0);
-    graph->points[graph->num_points].fan_speed = (int)strtol(graph_line, &graph_line, 0);
+    graph->points[graph->num_points].temp = strtof(graph_line, &graph_line);
+    graph->points[graph->num_points].fan_speed = strtof(graph_line, NULL);
     graph->num_points++;
   }
-
-  if (fclose(file) == EOF) {
-    perror("fclose");
+  if (ferror(file) != 0) {
+    perror("getline");
+    ret = -1;
   }
 
-  return 0;
+  free(line);
+  if (fclose(file) == EOF) {
+    perror("fclose");
+    ret = -1;
+  }
+
+  return ret;
 }
 
 int load_config(const char *path, Config *config) {
