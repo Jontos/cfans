@@ -37,6 +37,7 @@ void destroy_hardware(AppContext *app_context) {
   free(app_context->sources);
   free(app_context->fans);
   free(app_context->graph.points);
+  free(app_context->average_buffer.slot);
 }
 
 int init_hardware(Config *config, AppContext *app_context) {

@@ -7,6 +7,44 @@
 #include "utils.h"
 #include "ini.h"
 
+typedef enum {
+    DUPSTR,
+    STRTOL,
+    STRTOF
+} ActionType;
+
+typedef struct {
+    const char *key;
+    ActionType action;
+    size_t offset;
+} ConfigHandler;
+
+static const ConfigHandler general_handlers[] = {
+  {"Graph", DUPSTR, offsetof(Config, graph_file)},
+  {"Average", STRTOL, offsetof(Config, average)},
+  {"Interval", STRTOL, offsetof(Config, interval)},
+  {NULL, 0, 0}
+};
+
+static const ConfigHandler source_handlers[] = {
+  {"Name", DUPSTR, offsetof(Source, name)},
+  {"Driver", DUPSTR, offsetof(Source, driver)},
+  {"PciDevice", DUPSTR, offsetof(Source, pci_device)},
+  {"Sensors", DUPSTR, offsetof(Source, sensors_string)},
+  {"Scale", STRTOF, offsetof(Source, scale)},
+  {NULL, 0, 0}
+};
+
+static const ConfigHandler fan_handlers[] = {
+  {"Name", DUPSTR, offsetof(Fan, name)},
+  {"Driver", DUPSTR, offsetof(Fan, driver)},
+  {"PWMFile", DUPSTR, offsetof(Fan, pwm_file)},
+  {"MinPWM", STRTOL, offsetof(Fan, min_pwm)},
+  {"MaxPWM", STRTOL, offsetof(Fan, max_pwm)},
+  {"TempSources", DUPSTR, offsetof(Fan, temp_sources_string)},
+  {NULL, 0, 0}
+};
+
 void *create_object(void **object, int *count, int *capacity, size_t obj_size) {
   if (*count == *capacity) {
     if (resize_array(object, obj_size, capacity) < 0) {
@@ -21,102 +59,65 @@ void *create_object(void **object, int *count, int *capacity, size_t obj_size) {
   return new_object;
 }
 
-int configure_general(Config *config, const char *name, const char *value) {
-  if (strcmp(name, "Graph") == 0) {
-    config->graph_file = strdup(value);
+int action_taker(void *member_ptr, ActionType action, const char *value) {
+  switch (action) {
+    case DUPSTR:
+      *(char**)member_ptr = strdup(value);
+      if (*(char**)member_ptr == NULL) {
+        perror("strdup failed");
+        return -1;
+      }
+      return 0;
+    case STRTOL:
+      *(int*)member_ptr = (int)strtol(value, NULL, 0);
+      return 0;
+    case STRTOF:
+      *(float*)member_ptr = strtof(value, NULL);
+      return 0;
   }
-  else if (strcmp(name, "Average") == 0) {
-    config->average = (int)strtol(value, NULL, 0);
+  return -1;
+}
+
+int configure_general(Config *config, const char *key, const char *value) {
+  for (int i = 0; general_handlers[i].key != NULL; i++) {
+    if (strcmp(key, general_handlers[i].key) == 0) {
+      const ConfigHandler *handler = &general_handlers[i];
+      void *member_ptr = (char*)config + handler->offset;
+      if (action_taker(member_ptr, handler->action, value) == 0) {
+        return 0;
+      }
+    }
   }
-  else if (strcmp(name, "Interval") == 0) {
-    config->interval = (int)strtol(value, NULL, 0);
-  }
-  else {
-    (void)fprintf(stderr, "Unknown key in general section: %s\n", name);
-    return -1;
-  }
-  return 0;
+  (void)fprintf(stderr, "Unknown key in general section: %s\n", key);
+  return -1;
 }
 
 int configure_source(Source *source, const char *key, const char *value) {
-  if (strcmp("Name", key) == 0) {
-    source->name = strdup(value);
-    if (source->name == NULL) {
-      perror("strdup failed for name");
-      return -1;
+  for (int i = 0; source_handlers[i].key != NULL; i++) {
+    if (strcmp(key, source_handlers[i].key) == 0) {
+      const ConfigHandler *handler = &source_handlers[i];
+      void *member_ptr = (char*)source + handler->offset;
+      if (action_taker(member_ptr, handler->action, value) == 0) {
+        return 0;
+      }
     }
   }
-  else if (strcmp("Driver", key) == 0) {
-    source->driver = strdup(value);
-    if (source->driver == NULL) {
-      perror("strdup failed for driver");
-      return -1;
-    }
-  }
-  else if (strcmp("PciDevice", key) == 0) {
-    source->pci_device = strdup(value);
-    if (source->pci_device == NULL) {
-      perror("strdup failed for pci_device");
-      return -1;
-    }
-  }
-  else if (strcmp("Sensors", key) == 0) {
-    source->sensors_string = strdup(value);
-    if (source->sensors_string == NULL) {
-      perror("strdup failed for sensors_string");
-      return -1;
-    }
-  }
-  else if (strcmp("Scale", key) == 0) {
-    source->scale = strtof(value, NULL);
-  }
-  else {
-    (void)fprintf(stderr, "Unknown key in source section: %s\n", key);
-    return -1;
-  }
-  return 0;
+  (void)fprintf(stderr, "Unknown key in source section: %s\n", key);
+  return -1;
 }
 
 int configure_fan(Fan *fan, const char *key, const char *value) {
-  if (strcmp("Name", key) == 0) {
-    fan->name = strdup(value);
-    if (fan->name == NULL) {
-      perror("strdup failed for name");
-      return -1;
+  for (int i = 0; fan_handlers[i].key != NULL; i++) {
+    if (strcmp(key, fan_handlers[i].key) == 0) {
+      const ConfigHandler *handler = &fan_handlers[i];
+      void *member_ptr = (char*)fan + handler->offset;
+      if (action_taker(member_ptr, handler->action, value) == 0) {
+        return 0;
+      }
     }
   }
-  else if (strcmp("Driver", key) == 0) {
-    fan->driver = strdup(value);
-    if (fan->driver == NULL) {
-      perror("strdup failed for driver");
-      return -1;
-    }
-  }
-  else if (strcmp("PWMFile", key) == 0) {
-    fan->pwm_file = strdup(value);
-    if (fan->pwm_file == NULL) {
-      perror("strdup failed for pwm_file");
-      return -1;
-    }
-  }
-  else if (strcmp("MinPWM", key) == 0) {
-    fan->min_pwm = (int)strtol(value, NULL, 0);
-  }
-  else if (strcmp("MaxPWM", key) == 0) {
-    fan->max_pwm = (int)strtol(value, NULL, 0);
-  }
-  else if (strcmp("TempSources", key) == 0) {
-    fan->temp_sources_string = strdup(value);
-    if (fan->temp_sources_string == NULL) {
-      perror("strdup failed for temp_sources_string");
-      return -1;
-    }
-  }
-  else {
-    (void)fprintf(stderr, "Unknown key in fan section: %s\n", key);
-    return -1;
-  }
-  return 0;
+  (void)fprintf(stderr, "Unknown key in source section: %s\n", key);
+  return -1;
 }
 
 static int handler(void *user, const char *section, const char *name,
@@ -236,10 +237,6 @@ int load_config(const char *path, Config *config) {
       break;
     case -1:
       (void)fprintf(stderr, "Can't load %s\n", path);
-      free_config(config);
-      return -1;
-    case -2:
-      (void)fprintf(stderr, "ini_parse() failed to allocate memory!\n");
       free_config(config);
       return -1;
     default:
