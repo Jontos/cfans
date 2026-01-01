@@ -104,6 +104,8 @@ void run_main_loop(AppContext *app_context, Config *config) {
 
     if (app_context->debug) {
       printf("\033[2J\033[Hhighest_temp:       %f\n", highest_temp);
+                   printf("hottest_device:     %s\n", app_context->hottest_device);
+                   printf("hottest_sensor:     %s\n", app_context->sources[app_context->hottest_device_index].hottest_sensor);
                    printf("temp_average:       %f\n", temp_average);
                    printf("target_fan_percent: %f\n", target_fan_percent);
       for (int i = 0; i < app_context->num_fans; i++) {

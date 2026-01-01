@@ -6,11 +6,18 @@
 #include "config_parser.h"
 
 typedef struct {
+    char *name;
+    char *filename;
+} tempInput;
+
+typedef struct {
+    char *name;
     sd_device_enumerator *enumerator;
     sd_device *device;
-    char **temp_inputs;
+    tempInput *temp_inputs;
     int num_inputs;
     int input_capacity;
+    char *hottest_sensor;
     float scale;
 } hwmonSource;
 

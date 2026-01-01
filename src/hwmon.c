@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <systemd/sd-device.h>
 
 #include "hwmon.h"
@@ -101,12 +102,13 @@ int register_temp_inputs(hwmonSource *source, const char *sensors_string) {
       }
 
       if (source->num_inputs == source->input_capacity) {
-        if (resize_array((void**)&source->temp_inputs, sizeof(char*), &source->input_capacity) < 0) {
+        if (resize_array((void**)&source->temp_inputs, sizeof(tempInput), &source->input_capacity) < 0) {
           return -1;
         }
       }
 
-      source->temp_inputs[source->num_inputs] = strdup(temp_input);
+      source->temp_inputs[source->num_inputs].name = strdup(value);
+      source->temp_inputs[source->num_inputs].filename = strdup(temp_input);
       source->num_inputs++;
     }
   }
@@ -122,6 +124,7 @@ int hwmon_source_init(Source *config, hwmonSource *source) {
     return -1;
   }
   source->scale = config->scale;
+  source->name = config->name;
 
   return 0;
 }
@@ -140,14 +143,15 @@ float hwmon_read_temp(hwmonSource *source) {
   float highest_temp = 0;
   for (int i = 0; i < source->num_inputs; i++) {
     // We need to send a NULL value to libsystemd so it clears the cached sysattr value
-    if (sd_device_set_sysattr_value(source->device, source->temp_inputs[i], NULL) != 0) {
-      (void)fprintf(stderr, "Error clearing libsystemd sysattr cache for %s\n", source->temp_inputs[i]);
+    if (sd_device_set_sysattr_value(source->device, source->temp_inputs[i].filename, NULL) != 0) {
+      (void)fprintf(stderr, "Error clearing libsystemd sysattr cache for %s\n", source->temp_inputs[i].filename);
     }
     const char *value;
-    if (sd_device_get_sysattr_value(source->device, source->temp_inputs[i], &value) >= 0) {
+    if (sd_device_get_sysattr_value(source->device, source->temp_inputs[i].filename, &value) >= 0) {
       float temp = strtof(value, NULL) / source->scale;
       if (temp > highest_temp) {
         highest_temp = temp;
+        source->hottest_sensor = source->temp_inputs[i].name;
       }
     }
   }
@@ -178,7 +182,7 @@ void hwmon_source_destroy(hwmonSource *sources, int num_sources) {
     sd_device_enumerator_unref(sources[i].enumerator);
 
     for (int j = 0; j < sources[i].num_inputs; j++) {
-      free(sources[i].temp_inputs[j]);
+      free(sources[i].temp_inputs[j].filename);
     }
     free((void*)sources[i].temp_inputs);
   }

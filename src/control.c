@@ -12,6 +12,8 @@ float get_highest_temp(AppContext *app_context) {
     float temp = hwmon_read_temp(&app_context->sources[i]);
     if (temp > highest_temp) {
       highest_temp = temp;
+      app_context->hottest_device = app_context->sources[i].name;
+      app_context->hottest_device_index = i;
     }
   }
   return highest_temp;

@@ -18,6 +18,8 @@ typedef struct {
   hwmonSource *sources;
   int num_sources;
   int initialised_sources;
+  char *hottest_device;
+  int hottest_device_index;
 
   hwmonFan *fans;
   int num_fans;
