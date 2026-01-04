@@ -190,8 +190,9 @@ void hwmon_source_destroy(struct hwmon_source *sources, int num_sources) {
 
     for (int j = 0; j < sources[i].num_inputs; j++) {
       free(sources[i].temp_input[j].filename);
+      free(sources[i].temp_input[j].name);
     }
-    free((void*)sources[i].temp_input);
+    free(sources[i].temp_input);
   }
 }
 

@@ -27,6 +27,8 @@ struct hwmon_fan {
   char *pwm_enable_file;
 
   int last_pwm_value;
+  float target_fan_percent;
+  int target_pwm_value;
 };
 
 int hwmon_source_init(struct source *config, struct hwmon_source *source);

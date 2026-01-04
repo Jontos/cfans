@@ -37,9 +37,22 @@
       ]
     },
     {
-      "name": "Intake",
+      "name": "Side Intake",
       "driver": "nct6687",
       "pwm file": "pwm5",
+      "min pwm": 40,
+      "max pwm": 255,
+      "curve": [
+        [65, 0],
+        [75, 10],
+        [90, 70],
+        [95, 100]
+      ]
+    },
+    {
+      "name": "Bottom Intake",
+      "driver": "nct6687",
+      "pwm file": "pwm3",
       "min pwm": 40,
       "max pwm": 255,
       "curve": [

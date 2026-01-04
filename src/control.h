@@ -12,13 +12,13 @@ typedef struct {
 } MovingAverage;
 
 typedef struct {
-  struct hwmon_source *sources;
+  struct hwmon_source *source;
   int num_sources;
   int initialised_sources;
   char *hottest_device;
   int hottest_device_index;
 
-  struct hwmon_fan *fans;
+  struct hwmon_fan *fan;
   int num_fans;
   int initialised_fans;
 
