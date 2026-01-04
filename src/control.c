@@ -2,7 +2,6 @@
 #include <stdlib.h>
 
 #include "control.h"
-#include "config_parser.h"
 
 #define ROUNDING_FLOAT 0.5F
 
@@ -57,32 +56,32 @@ float moving_average_update(AppContext *app_context, float current_temp) {
   return total / (float)buffer->num_slots;
 }
 
-float linearly_interpolate(float temperature, GraphPoint *start, GraphPoint *end) {
-  float fan_speed_range = end->fan_speed - start->fan_speed;
-  float temp_range = end->temp - start->temp;
-  float offset_from_last = temperature - start->temp;
+float linearly_interpolate(float temperature, struct curve *start, struct curve *end) {
+  float fan_speed_range = (float)end->fan_percent - (float)start->fan_percent;
+  float temp_range = (float)end->temp - (float)start->temp;
+  float offset_from_last = temperature - (float)start->temp;
 
-  return start->fan_speed + (offset_from_last * fan_speed_range / temp_range);
+  return (float)start->fan_percent + (offset_from_last * fan_speed_range / temp_range);
 }
 
-float calculate_fan_percent(AppContext *app_context, float temperature) {
-  Graph *graph = &app_context->graph;
-  int high = graph->num_points - 1;
+float calculate_fan_percent(struct curve curve[], int num_points, float temperature)
+{
+  int high = num_points - 1;
   int low = 0;
 
-  if (temperature <= graph->points[0].temp) {
-    return graph->points[0].fan_speed;
+  if (temperature <= (float)curve[0].temp) {
+    return (float)curve[0].fan_percent;
   }
-  if (temperature >= graph->points[graph->num_points-1].temp) {
-    return graph->points[graph->num_points-1].fan_speed;
+  if (temperature >= (float)curve[num_points-1].temp) {
+    return (float)curve[num_points-1].fan_percent;
   }
 
   while (low <= high) {
     int mid = low + ((high - low) / 2);
-    if (temperature == graph->points[mid].temp) {
-      return graph->points[mid].fan_speed;
+    if (temperature == (float)curve[mid].temp) {
+      return (float)curve[mid].fan_percent;
     }
-    if (temperature < graph->points[mid].temp) {
+    if (temperature < (float)curve[mid].temp) {
       high = mid - 1;
     }
     else {
@@ -91,7 +90,7 @@ float calculate_fan_percent(AppContext *app_context, float temperature) {
   }
 
   return
-  linearly_interpolate(temperature, &graph->points[high], &graph->points[low]);
+  linearly_interpolate(temperature, &curve[high], &curve[low]);
 }
 
 int calculate_pwm_value(float fan_percent, int min_pwm, int max_pwm) {
