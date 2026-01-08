@@ -50,6 +50,7 @@ int init_hardware(struct config *config, AppContext *app_context) {
     destroy_hardware(app_context);
     return -1;
   }
+
   for (int i = 0; i < config->num_sources; i++) {
     if (hwmon_source_init(&config->source[i], &app_context->source[i]) < 0) {
       (void)fprintf(stderr, "Failed to initialise source: %s\n", config->source[i].name);
@@ -65,6 +66,7 @@ int init_hardware(struct config *config, AppContext *app_context) {
     destroy_hardware(app_context);
     return -1;
   }
+
   for (int i = 0; i < config->num_fans; i++) {
     if (hwmon_fan_init(&config->fan[i], &app_context->fan[i]) < 0) {
       (void)fprintf(stderr, "Failed to initialise fan: %s\n", config->fan[i].name);
@@ -97,7 +99,7 @@ void run_main_loop(AppContext *app_context, struct config *config) {
     if (app_context->debug) {
       printf("\033[2J\033[Hhighest_temp:         %f\n", highest_temp);
                    printf("hottest_device:       %s\n", app_context->hottest_device);
-                   printf("hottest_sensor:       %s\n", app_context->source[app_context->hottest_device_index].hottest_sensor);
+                   printf("hottest_sensor:       %s\n", app_context->hottest_sensor);
                    printf("temp_average:         %f\n", temp_average);
       for (int i = 0; i < app_context->num_fans; i++) {
                    printf("\n");
@@ -130,7 +132,7 @@ int main(int argc, char *argv[])
     perror("signal");
   }
 
-  const char *config_path = "/etc/cfans/config.ini";
+  const char *config_path = "/etc/cfans/config.json";
 
   int opt;
   while ((opt = getopt(argc, argv, "c:")) != -1) {

@@ -6,17 +6,15 @@
       "name": "GPU",
       "driver": "amdgpu",
       "pci device": "0x747e",
-      "scale": 1000,
       "sensors": [
         { "name": "edge" },
-        { "name": "junction", "offset": -5 },
-        { "name": "mem" }
+        { "name": "junction", "offset": -10 },
+        { "name": "mem", "offset": -10 }
       ]
     },
     {
       "name": "CPU",
       "driver": "k10temp",
-      "scale": 1000,
       "sensors": [
         { "name": "Tctl" }
       ]
@@ -27,39 +25,44 @@
       "name": "Radiator",
       "driver": "nct6687",
       "pwm file": "pwm1",
-      "min pwm": 40,
+      "min pwm": 43,
       "max pwm": 255,
       "curve": [
-        [65, 0],
-        [75, 10],
-        [90, 70],
-        [95, 100]
-      ]
-    },
-    {
-      "name": "Side Intake",
-      "driver": "nct6687",
-      "pwm file": "pwm5",
-      "min pwm": 40,
-      "max pwm": 255,
-      "curve": [
-        [65, 0],
-        [75, 10],
-        [90, 70],
-        [95, 100]
+        [60, 0],
+        [70, 20],
+        [80, 55],
+        [85, 70],
+        [100, 100]
       ]
     },
     {
       "name": "Bottom Intake",
       "driver": "nct6687",
       "pwm file": "pwm3",
-      "min pwm": 40,
+      "min pwm": 58,
       "max pwm": 255,
       "curve": [
-        [65, 0],
-        [75, 10],
+        [60, 0],
+        [65, 10],
+        [70, 20],
+        [80, 50],
         [90, 70],
-        [95, 100]
+        [100, 100]
+      ]
+    },
+    {
+      "name": "Side Intake",
+      "driver": "nct6687",
+      "pwm file": "pwm5",
+      "min pwm": 58,
+      "max pwm": 255,
+      "curve": [
+        [60, 0],
+        [65, 10],
+        [70, 20],
+        [80, 50],
+        [90, 70],
+        [100, 100]
       ]
     }
   ]

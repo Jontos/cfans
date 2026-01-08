@@ -5,16 +5,20 @@
 
 #define ROUNDING_FLOAT 0.5F
 
-float get_highest_temp(AppContext *app_context) {
+float get_highest_temp(AppContext *app_context)
+{
   float highest_temp = 0;
   for (int i = 0; i < app_context->num_sources; i++) {
-    float temp = hwmon_read_temp(&app_context->sources[i]);
-    if (temp > highest_temp) {
-      highest_temp = temp;
-      app_context->hottest_device = app_context->sources[i].name;
-      app_context->hottest_device_index = i;
+    for (int j = 0; j < app_context->source[i].num_inputs; j++) {
+      hwmon_read_temp(&app_context->source[i].temp_input[j]);
+      if (app_context->source[i].temp_input[j].current_temp > highest_temp) {
+        highest_temp = app_context->source[i].temp_input[j].current_temp;
+        app_context->hottest_device = app_context->source[i].name;
+        app_context->hottest_sensor = app_context->source[i].temp_input[j].name;
+      }
     }
   }
+
   return highest_temp;
 }
 

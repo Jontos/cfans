@@ -16,7 +16,7 @@ typedef struct {
   int num_sources;
   int initialised_sources;
   char *hottest_device;
-  int hottest_device_index;
+  char *hottest_sensor;
 
   struct hwmon_fan *fan;
   int num_fans;

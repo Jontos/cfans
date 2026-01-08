@@ -3,7 +3,7 @@
 
 struct sensor {
   char *name;
-  int offset;
+  float offset;
 };
 
 struct source {

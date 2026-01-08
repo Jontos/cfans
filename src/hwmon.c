@@ -115,6 +115,19 @@ int register_temp_inputs(struct hwmon_source *source,
           perror("strdup");
           return -1;
         }
+
+        source->temp_input[i].device = source->device;
+
+        source->temp_input[i].offset = sensor[i].offset;
+        source->temp_input[i].scale = DEGREES;
+        if (hwmon_read_temp(&source->temp_input[i])) {
+          (void)fprintf(stderr, "Failed to read temp for %s\n", source->temp_input[i].name);
+          return -1;
+        }
+        if (source->temp_input[i].current_temp > MILLIDEGREES) {
+          source->temp_input[i].scale = MILLIDEGREES;
+        }
+
         break;
       }
     }
@@ -130,7 +143,6 @@ int hwmon_source_init(struct source *config, struct hwmon_source *source) {
   if (register_temp_inputs(source, config->sensor, config->num_sensors) < 0) {
     return -1;
   }
-  source->scale = (float)config->scale;
   source->name = config->name;
 
   return 0;
@@ -146,23 +158,20 @@ int hwmon_fan_init(struct fan *config, struct hwmon_fan *fan) {
   return 0;
 }
 
-float hwmon_read_temp(struct hwmon_source *source) {
-  float highest_temp = 0;
-  for (int i = 0; i < source->num_inputs; i++) {
-    // We need to send a NULL value to libsystemd so it clears the cached sysattr value
-    if (sd_device_set_sysattr_value(source->device, source->temp_input[i].filename, NULL) != 0) {
-      (void)fprintf(stderr, "Error clearing libsystemd sysattr cache for %s\n", source->temp_input[i].filename);
-    }
-    const char *value;
-    if (sd_device_get_sysattr_value(source->device, source->temp_input[i].filename, &value) >= 0) {
-      float temp = strtof(value, NULL) / source->scale;
-      if (temp > highest_temp) {
-        highest_temp = temp;
-        source->hottest_sensor = source->temp_input[i].name;
-      }
-    }
+int hwmon_read_temp(struct temp_input *input)
+{
+  // We need to send a NULL value to libsystemd so it clears the cached sysattr value
+  if (sd_device_set_sysattr_value(input->device, input->filename, NULL) != 0) {
+    (void)fprintf(stderr, "Error clearing libsystemd sysattr cache for %s\n", input->filename);
+    return -1;
   }
-  return highest_temp;
+
+  const char *value;
+  if (sd_device_get_sysattr_value(input->device, input->filename, &value) < 0) return -1;
+
+  input->current_temp = strtof(value, NULL) / (float)input->scale + input->offset;
+
+  return 0;
 }
 
 int hwmon_set_pwm(struct hwmon_fan *fan, int pwm_value) {

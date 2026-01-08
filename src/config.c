@@ -151,7 +151,6 @@ int configure_sources(cJSON *array, struct config *config)
     cJSON *name = NULL;
     cJSON *driver = NULL;
     cJSON *pci_device = NULL;
-    cJSON *scale = NULL;
 
     cJSON *sensors = cJSON_GetObjectItem(source, "sensors");
     if (sensors == NULL) {
@@ -164,8 +163,7 @@ int configure_sources(cJSON *array, struct config *config)
     struct config_option opts[] = {
       {"name", STRING, name, (void*)&config->source[count].name, true},
       {"driver", STRING, driver, (void*)&config->source[count].driver, true},
-      {"pci device", STRING, pci_device, (void*)&config->source[count].pci_device, false},
-      {"scale", NUMBER, scale, (void*)&config->source[count].scale, true}
+      {"pci device", STRING, pci_device, (void*)&config->source[count].pci_device, false}
     };
 
     int num_opts = (sizeof(opts) / sizeof(struct config_option));
