@@ -36,6 +36,21 @@
       ]
     },
     {
+      "name": "Rear Exhaust",
+      "driver": "nct6687",
+      "pwm file": "pwm4",
+      "min pwm": 67,
+      "max pwm": 255,
+      "curve": [
+        [60, 0],
+        [65, 10],
+        [70, 30],
+        [80, 50],
+        [90, 70],
+        [100, 100]
+      ]
+    },
+    {
       "name": "Bottom Intake",
       "driver": "nct6687",
       "pwm file": "pwm3",
