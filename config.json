@@ -27,6 +27,7 @@
       "pwm file": "pwm1",
       "min pwm": 43,
       "max pwm": 255,
+      "zero rpm": true,
       "curve": [
         [60, 0],
         [70, 20],
@@ -41,6 +42,7 @@
       "pwm file": "pwm4",
       "min pwm": 67,
       "max pwm": 255,
+      "zero rpm": true,
       "curve": [
         [60, 0],
         [65, 10],
@@ -56,6 +58,7 @@
       "pwm file": "pwm3",
       "min pwm": 58,
       "max pwm": 255,
+      "zero rpm": true,
       "curve": [
         [60, 0],
         [65, 10],
@@ -71,6 +74,7 @@
       "pwm file": "pwm5",
       "min pwm": 58,
       "max pwm": 255,
+      "zero rpm": true,
       "curve": [
         [60, 0],
         [65, 10],

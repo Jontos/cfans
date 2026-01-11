@@ -34,6 +34,6 @@ int moving_average_init(AppContext *app_context, int average);
 float moving_average_update(AppContext *app_context, float current_temp);
 
 float calculate_fan_percent(struct curve curve[], int num_points, float temperature);
-int calculate_pwm_value(float fan_percent, int min_pwm, int max_pwm);
+int calculate_pwm_value(float fan_percent, int min_pwm, int max_pwm, bool zero_rpm);
 
 #endif

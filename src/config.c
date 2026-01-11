@@ -9,7 +9,8 @@
 
 enum value_type {
   STRING,
-  NUMBER
+  NUMBER,
+  BOOL
 };
 
 struct config_option {
@@ -83,6 +84,13 @@ int configure_opts(cJSON *json, struct config_option opts[], int num_opts)
           return -1;
         }
         *(int*)opts[i].struct_member = (int)number;
+        break;
+      case BOOL:
+        if (!cJSON_IsBool(opts[i].json)) {
+          (void)fprintf(stderr, "\"%s\" value must be a boolean\n", opts[i].key);
+          return -1;
+        }
+        *(bool*)opts[i].struct_member = cJSON_IsTrue(opts[i].json);
         break;
     }
   }
@@ -223,6 +231,7 @@ int configure_fans(cJSON *array, struct config *config)
     cJSON *pwm_file = NULL;
     cJSON *min_pwm = NULL;
     cJSON *max_pwm = NULL;
+    cJSON *zero_rpm = NULL;
 
     cJSON *curve = cJSON_GetObjectItem(fan, "curve");
     if (curve == NULL) {
@@ -238,6 +247,7 @@ int configure_fans(cJSON *array, struct config *config)
       {"pwm file", STRING, pwm_file, (void*)&config->fan[count].pwm_file, true},
       {"min pwm", NUMBER, min_pwm, &config->fan[count].min_pwm, true},
       {"max pwm", NUMBER, max_pwm, &config->fan[count].max_pwm, true},
+      {"zero rpm", BOOL, zero_rpm, &config->fan[count].zero_rpm, false},
     };
 
     int num_opts = (sizeof(opts) / sizeof(struct config_option));

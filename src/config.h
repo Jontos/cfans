@@ -1,6 +1,8 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include <stdbool.h>
+
 struct sensor {
   char *name;
   float offset;
@@ -27,6 +29,7 @@ struct fan {
   char *pwm_file;
   int min_pwm;
   int max_pwm;
+  bool zero_rpm;
 
   struct curve *curve;
   int num_points;

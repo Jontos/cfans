@@ -97,7 +97,12 @@ float calculate_fan_percent(struct curve curve[], int num_points, float temperat
   linearly_interpolate(temperature, &curve[high], &curve[low]);
 }
 
-int calculate_pwm_value(float fan_percent, int min_pwm, int max_pwm) {
+int calculate_pwm_value(float fan_percent, int min_pwm, int max_pwm, bool zero_rpm)
+{
+  if (zero_rpm && fan_percent == 0) {
+    return 0;
+  }
+
   float percent_decimal = fan_percent / 100.0F;
   int pwm_range = max_pwm - min_pwm;
 
