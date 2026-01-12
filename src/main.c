@@ -90,6 +90,7 @@ void run_main_loop(AppContext *app_context, struct config *config) {
     for (int i = 0; i < app_context->num_fans; i++) {
       app_context->fan[i].target_fan_percent = calculate_fan_percent(config->fan[i].curve, config->fan[i].num_points, temp_average);
       app_context->fan[i].target_pwm_value = calculate_pwm_value(app_context->fan[i].target_fan_percent, config->fan[i].min_pwm, config->fan[i].max_pwm, config->fan[i].zero_rpm);
+
       if (app_context->fan[i].target_pwm_value != app_context->fan[i].last_pwm_value) {
         hwmon_set_pwm(&app_context->fan[i], app_context->fan[i].target_pwm_value);
         app_context->fan[i].last_pwm_value = app_context->fan[i].target_pwm_value;
@@ -170,6 +171,11 @@ int main(int argc, char *argv[])
   }
   else {
     app_context.debug = false;
+  }
+
+  // Set initial pwm values
+  for (int i = 0; i < app_context.num_fans; i++) {
+    hwmon_set_pwm(&app_context.fan[i], 0);
   }
 
   run_main_loop(&app_context, &config);
