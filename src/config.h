@@ -18,11 +18,6 @@ struct source {
   int num_sensors;
 };
 
-struct curve {
-  int temp;
-  int fan_percent;
-};
-
 struct fan {
   char *name;
   char *driver;
@@ -32,6 +27,16 @@ struct fan {
   bool zero_rpm;
 
   struct curve *curve;
+};
+
+struct graph_point {
+  int temp;
+  int fan_percent;
+};
+
+struct curve {
+  char *name;
+  struct graph_point *graph_point;
   int num_points;
 };
 
@@ -44,6 +49,9 @@ struct config {
 
   struct fan *fan;
   int num_fans;
+
+  struct curve *curve;
+  int num_curves;
 };
 
 int load_config(const char *path, struct config *config);

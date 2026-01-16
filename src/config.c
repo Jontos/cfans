@@ -1,6 +1,8 @@
 #include <cjson/cJSON.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,15 +12,28 @@
 enum value_type {
   STRING,
   NUMBER,
-  BOOL
+  BOOL,
+  ARRAY
 };
 
 struct config_option {
   const char *key;
   enum value_type type;
-  cJSON *json;
   void *struct_member;
   bool required;
+};
+
+struct sausage {
+  char *array_name;
+  void **struct_array;
+  size_t struct_size;
+  int *object_count;
+
+  struct config_option *opts;
+  int num_opts;
+
+  int (*nested_conf_func)(void *userdata, cJSON *object, void *array_ptr);
+  void *userdata;
 };
 
 cJSON *parse_config(const char *path)
@@ -49,50 +64,109 @@ cJSON *parse_config(const char *path)
   return ret;
 }
 
+int process_option(cJSON *item, struct config_option *opts)
+{
+  switch (opts->type) {
+    case STRING:
+      char *string = cJSON_GetStringValue(item);
+      if (string == NULL) {
+        (void)fprintf(stderr, "\"%s\" value must be of string type\n", opts->key);
+        return -1;
+      }
+
+      *(char**)opts->struct_member = strdup(string);
+      if (*(char**)opts->struct_member == NULL) {
+        perror("strdup");
+        return -1;
+      }
+      break;
+    case NUMBER:
+    case ARRAY:
+      double number = cJSON_GetNumberValue(item);
+      if (number == NAN) {
+        (void)fprintf(stderr, "\"%s\" value must be a number\n", opts->key);
+        return -1;
+      }
+      *(int*)opts->struct_member = (int)number;
+      break;
+    case BOOL:
+      if (!cJSON_IsBool(item)) {
+        (void)fprintf(stderr, "\"%s\" value must be a boolean\n", opts->key);
+        return -1;
+      }
+      *(bool*)opts->struct_member = cJSON_IsTrue(item);
+      break;
+  }
+
+  return 0;
+}
+
 int configure_opts(cJSON *json, struct config_option opts[], int num_opts)
 {
   for (int i = 0; i < num_opts; i++) {
 
-    if (json != NULL) {
-      opts[i].json = cJSON_GetObjectItem(json, opts[i].key);
-      if (opts[i].json == NULL) {
-        if (opts[i].required) {
-          (void)fprintf(stderr, "Config error: missing %s\n", opts[i].key);
-          return -1;
-        }
-        continue;
-      }
+    cJSON *item = NULL;
+
+    if (opts[i].type == ARRAY) {
+      item = cJSON_GetArrayItem(json, i);
+    }
+    else {
+      item = cJSON_GetObjectItem(json, opts[i].key);
     }
 
-    switch (opts[i].type) {
-      case STRING:
-        char *string = cJSON_GetStringValue(opts[i].json);
-        if (string == NULL) {
-          (void)fprintf(stderr, "\"%s\" value must be of string type\n", opts[i].key);
-          return -1;
-        }
-        *(char**)opts[i].struct_member = strdup(string);
-        if (opts[i].struct_member == NULL) {
-          perror("strdup");
-          return -1;
-        }
-        break;
-      case NUMBER:
-        double number = cJSON_GetNumberValue(opts[i].json);
-        if (number == NAN) {
-          (void)fprintf(stderr, "\"%s\" value must be a number\n", opts[i].key);
-          return -1;
-        }
-        *(int*)opts[i].struct_member = (int)number;
-        break;
-      case BOOL:
-        if (!cJSON_IsBool(opts[i].json)) {
-          (void)fprintf(stderr, "\"%s\" value must be a boolean\n", opts[i].key);
-          return -1;
-        }
-        *(bool*)opts[i].struct_member = cJSON_IsTrue(opts[i].json);
-        break;
+    if (item == NULL) {
+      if (opts[i].required) {
+        (void)fprintf(stderr, "Config error: missing %s\n", opts[i].key);
+        return -1;
+      }
+      continue;
     }
+
+    process_option(item, &opts[i]);
+  }
+
+  return 0;
+}
+
+int configure_config_object(cJSON *json, struct sausage *sausage)
+{
+  cJSON *array = cJSON_GetObjectItem(json, sausage->array_name);
+  if (array == NULL) {
+    (void)fprintf(stderr, "Config error: missing %s array\n", sausage->array_name);
+    return -1;
+  }
+
+  *sausage->object_count = cJSON_GetArraySize(array);
+  *sausage->struct_array = calloc(*sausage->object_count, sausage->struct_size);
+  if (*sausage->struct_array == NULL) {
+    perror("calloc");
+    return -1;
+  }
+
+  cJSON *object = NULL;
+  int count = 0;
+  char *base_ptr = (char*)*sausage->struct_array;
+
+  cJSON_ArrayForEach(object, array) {
+
+    void *current_array_memb = base_ptr + count * sausage->struct_size;
+
+    struct config_option opts[sausage->num_opts];
+
+    for (int i = 0; i < sausage->num_opts; i++) {
+      opts[i] = sausage->opts[i];
+
+      size_t offset = (size_t)sausage->opts[i].struct_member;
+      opts[i].struct_member = (char*)current_array_memb + offset;
+    }
+
+    if (configure_opts(object, opts, sausage->num_opts) < 0) return -1;
+
+    if (sausage->nested_conf_func) {
+      if (sausage->nested_conf_func(sausage->userdata, object, current_array_memb) > 0) return -1;
+    }
+
+    count++;
   }
 
   return 0;
@@ -100,12 +174,9 @@ int configure_opts(cJSON *json, struct config_option opts[], int num_opts)
 
 int configure_general(cJSON *json, struct config *config)
 {
-  cJSON *average = NULL;
-  cJSON *interval = NULL;
-
   struct config_option opts[] = {
-    {"average", NUMBER, average, &config->average, true},
-    {"interval", NUMBER, interval, &config->interval, true}
+    {"average", NUMBER, &config->average, true},
+    {"interval", NUMBER, &config->interval, true}
   };
 
   int num_opts = (sizeof(opts) / sizeof(struct config_option));
@@ -113,151 +184,142 @@ int configure_general(cJSON *json, struct config *config)
   return configure_opts(json, opts, num_opts);
 }
 
-int configure_sensors(cJSON *array, struct source *source)
+int configure_sensors(void *userdata, cJSON *json, void *source_struct)
 {
-  source->num_sensors = cJSON_GetArraySize(array);
-  source->sensor = calloc(source->num_sensors, sizeof(struct sensor));
-  if (source->sensor == NULL) {
-    perror("calloc");
-    return -1;
-  }
+  (void)userdata;
 
-  cJSON *sensor = NULL;
-  int count = 0;
-  cJSON_ArrayForEach(sensor, array) {
-    cJSON *name = NULL;
-    cJSON *offset = NULL;
+  struct source *source = source_struct;
 
-    struct config_option opts[] = {
-      {"name", STRING, name, (void*)&source->sensor[count].name, true},
-      {"offset", NUMBER, offset, &source->sensor[count].offset, false}
-    };
+  // NOLINTBEGIN(performance-no-int-to-ptr)
+  struct config_option opts[] = {
+    {"name", STRING, (void*)offsetof(struct sensor, name), true},
+    {"offset", NUMBER, (void*)offsetof(struct sensor, offset), false}
+  };
+  // NOLINTEND(performance-no-int-to-ptr)
 
-    int num_opts = (sizeof(opts) / sizeof(struct config_option));
-
-    if (configure_opts(sensor, opts, num_opts) < 0) return -1;
-    
-    count++;
-  }
-
-  return 0;
+  return configure_config_object(json, &(struct sausage) {
+    .array_name = "sensors",
+    .struct_array = (void**)&source->sensor,
+    .struct_size = sizeof(struct sensor),
+    .object_count = &source->num_sensors,
+    .opts = opts,
+    .num_opts = sizeof(opts) / sizeof(struct config_option),
+  });
 }
 
-int configure_sources(cJSON *array, struct config *config)
+int configure_sources(cJSON *json, struct config *config)
 {
-  config->num_sources = cJSON_GetArraySize(array);
-  config->source = calloc(config->num_sources, sizeof(struct source));
-  if (config->source == NULL) {
-    perror("calloc");
+  // NOLINTBEGIN(performance-no-int-to-ptr)
+  struct config_option opts[] = {
+    {"name", STRING, (void*)offsetof(struct source, name), true},
+    {"driver", STRING, (void*)offsetof(struct source, driver), true},
+    {"pci device", STRING, (void*)offsetof(struct source, pci_device), false}
+  };
+  // NOLINTEND(performance-no-int-to-ptr)
+
+  return configure_config_object(json, &(struct sausage) {
+    .array_name = "sources",
+    .struct_array = (void**)&config->source,
+    .struct_size = sizeof(struct source),
+    .object_count = &config->num_sources,
+    .opts = opts,
+    .num_opts = sizeof(opts) / sizeof(struct config_option),
+    .nested_conf_func = configure_sensors
+  });
+}
+
+int configure_graph(void *userdata, cJSON *json, void *curve_struct)
+{
+  (void)userdata;
+
+  struct curve *curve = curve_struct;
+
+  // NOLINTBEGIN(performance-no-int-to-ptr)
+  struct config_option opts[] = {
+    {"temp", ARRAY, (void*)offsetof(struct graph_point, temp), true},
+    {"fan percent", ARRAY, (void*)offsetof(struct graph_point, fan_percent), true}
+  };
+  // NOLINTEND(performance-no-int-to-ptr)
+
+  return configure_config_object(json, &(struct sausage) {
+    .array_name = "graph",
+    .struct_array = (void**)&curve->graph_point,
+    .struct_size = sizeof(struct graph_point),
+    .object_count = &curve->num_points,
+    .opts = opts,
+    .num_opts = sizeof(opts) / sizeof(struct config_option),
+  });
+}
+
+int configure_curves(cJSON *json, struct config *config)
+{
+  struct config_option opts[] = {
+    {"name", STRING, (void*)offsetof(struct curve, name), true}
+  };
+
+  return configure_config_object(json, &(struct sausage) {
+    .array_name = "curves",
+    .struct_array = (void**)&config->curve,
+    .struct_size = sizeof(struct curve),
+    .object_count = &config->num_curves,
+    .opts = opts,
+    .num_opts = sizeof(opts) / sizeof(struct config_option),
+    .nested_conf_func = configure_graph
+  });
+}
+
+int link_fan_curves(void *userdata, cJSON *json, void *fan_struct)
+{
+  struct fan *fan = fan_struct;
+  struct config *config = userdata;
+
+  cJSON *curve = cJSON_GetObjectItem(json, "curve");
+  if (curve == NULL) {
+    (void)fprintf(stderr, "Config error: \"%s\" has no curve selected\n", fan->name);
     return -1;
   }
 
-  cJSON *source = NULL;
-  int count = 0;
-  cJSON_ArrayForEach(source, array) {
-
-    cJSON *name = NULL;
-    cJSON *driver = NULL;
-    cJSON *pci_device = NULL;
-
-    cJSON *sensors = cJSON_GetObjectItem(source, "sensors");
-    if (sensors == NULL) {
-      (void)fprintf(stderr, "Config error: missing sensor array\n");
-      return -1;
+  char *name = cJSON_GetStringValue(curve);
+  if (name == NULL) {
+    (void)fprintf(stderr, "\"curve\" value must be of string type\n");
+    return -1;
+  }
+  
+  for (int i = 0; i < config->num_curves; i++) {
+    if (strcmp(name, config->curve[i].name) == 0) {
+      fan->curve = &config->curve[i];
+      return 0;
     }
-
-    if (configure_sensors(sensors, &config->source[count]) < 0) return -1;
-
-    struct config_option opts[] = {
-      {"name", STRING, name, (void*)&config->source[count].name, true},
-      {"driver", STRING, driver, (void*)&config->source[count].driver, true},
-      {"pci device", STRING, pci_device, (void*)&config->source[count].pci_device, false}
-    };
-
-    int num_opts = (sizeof(opts) / sizeof(struct config_option));
-
-    if (configure_opts(source, opts, num_opts) < 0) return -1;
-
-    count++;
   }
 
-  return 0;
+  (void)fprintf(stderr, "Config error: curve \"%s\" not found for fan \"%s\"", name, fan->name);
+
+  return -1;
 }
 
-int configure_curve(cJSON *array, struct fan *fan)
+int configure_fans(cJSON *json, struct config *config)
 {
-  fan->num_points = cJSON_GetArraySize(array);
-  fan->curve = calloc(fan->num_points, sizeof(struct curve));
-  if (fan->curve == NULL) {
-    perror("calloc");
-    return -1;
-  }
+  // NOLINTBEGIN(performance-no-int-to-ptr)
+  struct config_option opts[] = {
+    {"name", STRING, (void*)offsetof(struct fan, name), true},
+    {"driver", STRING, (void*)offsetof(struct fan, driver), true},
+    {"pwm file", STRING, (void*)offsetof(struct fan, pwm_file), true},
+    {"min pwm", NUMBER, (void*)offsetof(struct fan, min_pwm), true},
+    {"max pwm", NUMBER, (void*)offsetof(struct fan, max_pwm), true},
+    {"zero rpm", BOOL, (void*)offsetof(struct fan, zero_rpm), false},
+  };
+  // NOLINTEND(performance-no-int-to-ptr)
 
-  cJSON *point = NULL;
-  int count = 0;
-  cJSON_ArrayForEach(point, array) {
-    cJSON *temp = point->child;
-    cJSON *fan_percent = point->child->next;
-
-    struct config_option opts[] = {
-      {"temp", NUMBER, temp, &fan->curve[count].temp, true},
-      {"fan percent", NUMBER, fan_percent, &fan->curve[count].fan_percent, true}
-    };
-
-    int num_opts = (sizeof(opts) / sizeof(struct config_option));
-
-    if (configure_opts(NULL, opts, num_opts) < 0) return -1;
-
-    count++;
-  }
-  return 0;
-}
-
-int configure_fans(cJSON *array, struct config *config)
-{
-  config->num_fans = cJSON_GetArraySize(array);
-  config->fan = calloc(config->num_fans, sizeof(struct fan));
-  if (config->fan == NULL) {
-    perror("calloc");
-    return -1;
-  }
-
-  cJSON *fan = NULL;
-  int count = 0;
-  cJSON_ArrayForEach(fan, array) {
-
-    cJSON *name = NULL;
-    cJSON *driver = NULL;
-    cJSON *pwm_file = NULL;
-    cJSON *min_pwm = NULL;
-    cJSON *max_pwm = NULL;
-    cJSON *zero_rpm = NULL;
-
-    cJSON *curve = cJSON_GetObjectItem(fan, "curve");
-    if (curve == NULL) {
-      (void)fprintf(stderr, "Config error: missing fan curve\n");
-      return -1;
-    }
-
-    if (configure_curve(curve, &config->fan[count]) < 0) return -1;
-
-    struct config_option opts[] = {
-      {"name", STRING, name, (void*)&config->fan[count].name, true},
-      {"driver", STRING, driver, (void*)&config->fan[count].driver, true},
-      {"pwm file", STRING, pwm_file, (void*)&config->fan[count].pwm_file, true},
-      {"min pwm", NUMBER, min_pwm, &config->fan[count].min_pwm, true},
-      {"max pwm", NUMBER, max_pwm, &config->fan[count].max_pwm, true},
-      {"zero rpm", BOOL, zero_rpm, &config->fan[count].zero_rpm, false},
-    };
-
-    int num_opts = (sizeof(opts) / sizeof(struct config_option));
-
-    if (configure_opts(fan, opts, num_opts) < 0) return -1;
-
-    count++;
-  }
-
-  return 0;
+  return configure_config_object(json, &(struct sausage) {
+    .array_name = "fans",
+    .struct_array = (void**)&config->fan,
+    .struct_size = sizeof(struct fan),
+    .object_count = &config->num_fans,
+    .opts = opts,
+    .num_opts = sizeof(opts) / sizeof(struct config_option),
+    .nested_conf_func = link_fan_curves,
+    .userdata = config
+  });
 }
 
 void free_config(struct config *config)
@@ -274,11 +336,16 @@ void free_config(struct config *config)
   }
   free(config->source);
 
+  for (int i = 0; i < config->num_curves; i++) {
+    free(config->curve[i].name);
+    free(config->curve[i].graph_point);
+  }
+  free(config->curve);
+
   for (int i = 0; i < config->num_fans; i++) {
     free(config->fan[i].name);
     free(config->fan[i].driver);
     free(config->fan[i].pwm_file);
-    free(config->fan[i].curve);
   }
   free(config->fan);
 }
@@ -291,31 +358,20 @@ int load_config(const char *path, struct config *config)
     return -1;
   }
 
-  if (configure_general(json, config) < 0) {
-    cJSON_Delete(json);
-    return -1;
-  }
+  int (*function[])(cJSON*, struct config*) = {
+    configure_general,
+    configure_sources,
+    configure_curves,
+    configure_fans,
+  };
 
-  cJSON *sources = cJSON_GetObjectItem(json, "sources");
-  if (sources == NULL) {
-    (void)fprintf(stderr, "Config error: missing sources array\n");
-    cJSON_Delete(json);
-    return -1;
-  }
-  if (configure_sources(sources, config) < 0) {
-    cJSON_Delete(json);
-    return -1;
-  }
+  int num_funcs = sizeof(function) / sizeof(function[0]);
 
-  cJSON *fans = cJSON_GetObjectItem(json, "fans");
-  if (fans == NULL) {
-    (void)fprintf(stderr, "Config error: missing fans array\n");
-    cJSON_Delete(json);
-    return -1;
-  }
-  if (configure_fans(fans, config) < 0) {
-    cJSON_Delete(json);
-    return -1;
+  for (int i = 0; i < num_funcs; i++) {
+    if (function[i](json, config)) {
+      cJSON_Delete(json);
+      return -1;
+    }
   }
 
   cJSON_Delete(json);
