@@ -3,30 +3,30 @@
 
 #include <stdbool.h>
 
-struct sensor {
+struct sensor_config {
   char *name;
   float offset;
 };
 
-struct custom_sensor {
+struct custom_sensor_config {
   char *name;
   char *type;
 
-  struct sensor *sensor;
+  struct sensor_config *sensor;
   int num_sensors;
 };
 
-struct source {
+struct source_config {
   char *name;
   char *driver;
   char *pci_device;
   int scale;
 
-  struct sensor *sensor;
+  struct sensor_config *sensor;
   int num_sensors;
 };
 
-struct fan {
+struct fan_config {
   char *name;
   char *driver;
   char *pwm_file;
@@ -34,7 +34,7 @@ struct fan {
   int max_pwm;
   bool zero_rpm;
 
-  struct curve *curve;
+  struct curve_config *curve;
 };
 
 struct graph_point {
@@ -42,11 +42,13 @@ struct graph_point {
   int fan_percent;
 };
 
-struct curve {
+struct curve_config {
   char *name;
 
   struct graph_point *graph_point;
   int num_points;
+
+  char *sensor;
 
   int hysteresis;
   int response_time;
@@ -56,16 +58,16 @@ struct config {
   int average;
   int interval;
 
-  struct source *source;
+  struct source_config *source;
   int num_sources;
 
-  struct fan *fan;
+  struct fan_config *fan;
   int num_fans;
 
-  struct curve *curve;
+  struct curve_config *curve;
   int num_curves;
 
-  struct custom_sensor *custom_sensor;
+  struct custom_sensor_config *custom_sensor;
   int num_custom_sensors;
 };
 

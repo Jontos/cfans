@@ -196,15 +196,15 @@ int configure_sensors(void *layout_template, cJSON *json, void *parent_struct)
 
   // NOLINTBEGIN(performance-no-int-to-ptr)
   static const struct config_option opts[] = {
-    {"name", STRING, (void*)offsetof(struct sensor, name), true},
-    {"offset", NUMBER, (void*)offsetof(struct sensor, offset), false}
+    {"name", STRING, (void*)offsetof(struct sensor_config, name), true},
+    {"offset", NUMBER, (void*)offsetof(struct sensor_config, offset), false}
   };
   // NOLINTEND(performance-no-int-to-ptr)
 
   return configure_config_object(json, &(struct sausage) {
     .array_name = "sensors",
     .struct_array = (void**)(base_ptr + layout->array_offset),
-    .struct_size = sizeof(struct sensor),
+    .struct_size = sizeof(struct sensor_config),
     .object_count = (int*)(base_ptr + layout->count_offset),
     .opts = opts,
     .num_opts = sizeof(opts) / sizeof(struct config_option),
@@ -215,21 +215,21 @@ int configure_sources(cJSON *json, struct config *config)
 {
   // NOLINTBEGIN(performance-no-int-to-ptr)
   static const struct config_option opts[] = {
-    {"name", STRING, (void*)offsetof(struct source, name), true},
-    {"driver", STRING, (void*)offsetof(struct source, driver), true},
-    {"pci device", STRING, (void*)offsetof(struct source, pci_device), false}
+    {"name", STRING, (void*)offsetof(struct source_config, name), true},
+    {"driver", STRING, (void*)offsetof(struct source_config, driver), true},
+    {"pci device", STRING, (void*)offsetof(struct source_config, pci_device), false}
   };
   // NOLINTEND(performance-no-int-to-ptr)
 
   static struct child_array_layout layout = {
-    .array_offset = offsetof(struct source, sensor),
-    .count_offset = offsetof(struct source, num_sensors)
+    .array_offset = offsetof(struct source_config, sensor),
+    .count_offset = offsetof(struct source_config, num_sensors)
   };
 
   return configure_config_object(json, &(struct sausage) {
     .array_name = "sources",
     .struct_array = (void**)&config->source,
-    .struct_size = sizeof(struct source),
+    .struct_size = sizeof(struct source_config),
     .object_count = &config->num_sources,
     .opts = opts,
     .num_opts = sizeof(opts) / sizeof(struct config_option),
@@ -242,7 +242,7 @@ int configure_graph(void *userdata, cJSON *json, void *curve_struct)
 {
   (void)userdata;
 
-  struct curve *curve = curve_struct;
+  struct curve_config *curve = curve_struct;
 
   // NOLINTBEGIN(performance-no-int-to-ptr)
   static const struct config_option opts[] = {
@@ -265,16 +265,17 @@ int configure_curves(cJSON *json, struct config *config)
 {
   // NOLINTBEGIN(performance-no-int-to-ptr)
   static const struct config_option opts[] = {
-    {"name", STRING, (void*)offsetof(struct curve, name), true},
-    {"hysteresis", NUMBER, (void*)offsetof(struct curve, hysteresis), false},
-    {"response time", NUMBER, (void*)offsetof(struct curve, response_time), false},
+    {"name", STRING, (void*)offsetof(struct curve_config, name), true},
+    {"sensor", STRING, (void*)offsetof(struct curve_config, sensor), true},
+    {"hysteresis", NUMBER, (void*)offsetof(struct curve_config, hysteresis), false},
+    {"response time", NUMBER, (void*)offsetof(struct curve_config, response_time), false},
   };
   // NOLINTEND(performance-no-int-to-ptr)
 
   return configure_config_object(json, &(struct sausage) {
     .array_name = "curves",
     .struct_array = (void**)&config->curve,
-    .struct_size = sizeof(struct curve),
+    .struct_size = sizeof(struct curve_config),
     .object_count = &config->num_curves,
     .opts = opts,
     .num_opts = sizeof(opts) / sizeof(struct config_option),
@@ -284,7 +285,7 @@ int configure_curves(cJSON *json, struct config *config)
 
 int link_fan_curves(void *userdata, cJSON *json, void *fan_struct)
 {
-  struct fan *fan = fan_struct;
+  struct fan_config *fan = fan_struct;
   struct config *config = userdata;
 
   cJSON *curve = cJSON_GetObjectItem(json, "curve");
@@ -315,19 +316,19 @@ int configure_fans(cJSON *json, struct config *config)
 {
   // NOLINTBEGIN(performance-no-int-to-ptr)
   static const struct config_option opts[] = {
-    {"name", STRING, (void*)offsetof(struct fan, name), true},
-    {"driver", STRING, (void*)offsetof(struct fan, driver), true},
-    {"pwm file", STRING, (void*)offsetof(struct fan, pwm_file), true},
-    {"min pwm", NUMBER, (void*)offsetof(struct fan, min_pwm), true},
-    {"max pwm", NUMBER, (void*)offsetof(struct fan, max_pwm), true},
-    {"zero rpm", BOOL, (void*)offsetof(struct fan, zero_rpm), false},
+    {"name", STRING, (void*)offsetof(struct fan_config, name), true},
+    {"driver", STRING, (void*)offsetof(struct fan_config, driver), true},
+    {"pwm file", STRING, (void*)offsetof(struct fan_config, pwm_file), true},
+    {"min pwm", NUMBER, (void*)offsetof(struct fan_config, min_pwm), true},
+    {"max pwm", NUMBER, (void*)offsetof(struct fan_config, max_pwm), true},
+    {"zero rpm", BOOL, (void*)offsetof(struct fan_config, zero_rpm), false},
   };
   // NOLINTEND(performance-no-int-to-ptr)
 
   return configure_config_object(json, &(struct sausage) {
     .array_name = "fans",
     .struct_array = (void**)&config->fan,
-    .struct_size = sizeof(struct fan),
+    .struct_size = sizeof(struct fan_config),
     .object_count = &config->num_fans,
     .opts = opts,
     .num_opts = sizeof(opts) / sizeof(struct config_option),
@@ -340,20 +341,20 @@ int configure_custom_sensors(cJSON *json, struct config *config)
 {
   // NOLINTBEGIN(performance-no-int-to-ptr)
   static const struct config_option opts[] = {
-    {"name", STRING, (void*)offsetof(struct source, name), true},
-    {"type", STRING, (void*)offsetof(struct source, driver), true}
+    {"name", STRING, (void*)offsetof(struct source_config, name), true},
+    {"type", STRING, (void*)offsetof(struct source_config, driver), true}
   };
   // NOLINTEND(performance-no-int-to-ptr)
 
   static struct child_array_layout layout = {
-    .array_offset = offsetof(struct custom_sensor, sensor),
-    .count_offset = offsetof(struct custom_sensor, num_sensors)
+    .array_offset = offsetof(struct custom_sensor_config, sensor),
+    .count_offset = offsetof(struct custom_sensor_config, num_sensors)
   };
 
   return configure_config_object(json, &(struct sausage) {
     .array_name = "custom sensors",
     .struct_array = (void**)&config->custom_sensor,
-    .struct_size = sizeof(struct custom_sensor),
+    .struct_size = sizeof(struct custom_sensor_config),
     .object_count = &config->num_custom_sensors,
     .opts = opts,
     .num_opts = sizeof(opts) / sizeof(struct config_option),
@@ -379,6 +380,7 @@ void free_config(struct config *config)
   for (int i = 0; i < config->num_curves; i++) {
     free(config->curve[i].name);
     free(config->curve[i].graph_point);
+    free(config->curve[i].sensor);
   }
   free(config->curve);
 

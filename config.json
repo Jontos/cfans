@@ -64,7 +64,7 @@
         [90, 70],
         [100, 100]
       ],
-      "source": "CPU/GPU Max",
+      "sensor": "CPU/GPU Max",
       "hysteresis": 3,
       "response time": 3
     }
