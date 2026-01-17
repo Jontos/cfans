@@ -8,8 +8,8 @@
       "pci device": "0x747e",
       "sensors": [
         { "name": "edge" },
-        { "name": "junction", "offset": -10 },
-        { "name": "mem", "offset": -10 }
+        { "name": "junction" },
+        { "name": "mem" }
       ]
     },
     {
@@ -27,8 +27,8 @@
       "sensors": [
         { "name": "Tctl" },
         { "name": "edge" },
-        { "name": "junction" },
-        { "name": "mem" }
+        { "name": "junction", "offset": -10 },
+        { "name": "mem", "offset": -10 }
       ]
     }
   ],

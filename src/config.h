@@ -8,6 +8,14 @@ struct sensor {
   float offset;
 };
 
+struct custom_sensor {
+  char *name;
+  char *type;
+
+  struct sensor *sensor;
+  int num_sensors;
+};
+
 struct source {
   char *name;
   char *driver;
@@ -36,8 +44,12 @@ struct graph_point {
 
 struct curve {
   char *name;
+
   struct graph_point *graph_point;
   int num_points;
+
+  int hysteresis;
+  int response_time;
 };
 
 struct config {
@@ -52,6 +64,9 @@ struct config {
 
   struct curve *curve;
   int num_curves;
+
+  struct custom_sensor *custom_sensor;
+  int num_custom_sensors;
 };
 
 int load_config(const char *path, struct config *config);
