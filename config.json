@@ -4,8 +4,7 @@
   "sources": [
     {
       "name": "GPU",
-      "driver": "amdgpu",
-      "pci device": "0x747e",
+      "device id": "+pci:0000:03:00.0",
       "sensors": [
         { "name": "edge" },
         { "name": "junction" },
@@ -14,7 +13,7 @@
     },
     {
       "name": "CPU",
-      "driver": "k10temp",
+      "device id": "+pci:0000:00:18.3",
       "sensors": [
         { "name": "Tctl" }
       ]
@@ -41,7 +40,8 @@
         [80, 55],
         [85, 70],
         [100, 100]
-      ]
+      ],
+      "sensor": "Tctl"
     },
     {
       "name": "Intake",
@@ -52,7 +52,8 @@
         [80, 50],
         [90, 70],
         [100, 100]
-      ]
+      ],
+      "sensor": "Tctl"
     },
     {
       "name": "Rear Exhaust",
@@ -64,7 +65,7 @@
         [90, 70],
         [100, 100]
       ],
-      "sensor": "CPU/GPU Max",
+      "sensor": "Tctl",
       "hysteresis": 3,
       "response time": 3
     }
@@ -72,7 +73,7 @@
   "fans": [
     {
       "name": "Radiator",
-      "driver": "nct6687",
+      "device id": "+platform:nct6687.2592",
       "pwm file": "pwm1",
       "min pwm": 43,
       "max pwm": 255,
@@ -81,7 +82,7 @@
     },
     {
       "name": "Rear Exhaust",
-      "driver": "nct6687",
+      "device id": "+platform:nct6687.2592",
       "pwm file": "pwm4",
       "min pwm": 67,
       "max pwm": 255,
@@ -90,7 +91,7 @@
     },
     {
       "name": "Bottom Intake",
-      "driver": "nct6687",
+      "device id": "+platform:nct6687.2592",
       "pwm file": "pwm3",
       "min pwm": 58,
       "max pwm": 255,
@@ -99,7 +100,7 @@
     },
     {
       "name": "Side Intake",
-      "driver": "nct6687",
+      "device id": "+platform:nct6687.2592",
       "pwm file": "pwm5",
       "min pwm": 58,
       "max pwm": 255,

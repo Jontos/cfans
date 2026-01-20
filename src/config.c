@@ -184,7 +184,7 @@ int configure_general(cJSON *json, struct config *config)
     {"interval", NUMBER, &config->interval, true}
   };
 
-  int num_opts = (sizeof(opts) / sizeof(struct config_option));
+  int num_opts = (sizeof(opts) / sizeof(opts[0]));
 
   return configure_opts(json, opts, num_opts);
 }
@@ -207,7 +207,7 @@ int configure_sensors(void *layout_template, cJSON *json, void *parent_struct)
     .struct_size = sizeof(struct sensor_config),
     .object_count = (int*)(base_ptr + layout->count_offset),
     .opts = opts,
-    .num_opts = sizeof(opts) / sizeof(struct config_option),
+    .num_opts = sizeof(opts) / sizeof(opts[0]),
   });
 }
 
@@ -216,8 +216,7 @@ int configure_sources(cJSON *json, struct config *config)
   // NOLINTBEGIN(performance-no-int-to-ptr)
   static const struct config_option opts[] = {
     {"name", STRING, (void*)offsetof(struct source_config, name), true},
-    {"driver", STRING, (void*)offsetof(struct source_config, driver), true},
-    {"pci device", STRING, (void*)offsetof(struct source_config, pci_device), false}
+    {"device id", STRING, (void*)offsetof(struct source_config, device_id), false}
   };
   // NOLINTEND(performance-no-int-to-ptr)
 
@@ -232,7 +231,7 @@ int configure_sources(cJSON *json, struct config *config)
     .struct_size = sizeof(struct source_config),
     .object_count = &config->num_sources,
     .opts = opts,
-    .num_opts = sizeof(opts) / sizeof(struct config_option),
+    .num_opts = sizeof(opts) / sizeof(opts[0]),
     .nested_conf_func = configure_sensors,
     .userdata = &layout
   });
@@ -257,7 +256,7 @@ int configure_graph(void *userdata, cJSON *json, void *curve_struct)
     .struct_size = sizeof(struct graph_point),
     .object_count = &curve->num_points,
     .opts = opts,
-    .num_opts = sizeof(opts) / sizeof(struct config_option),
+    .num_opts = sizeof(opts) / sizeof(opts[0]),
   });
 }
 
@@ -278,7 +277,7 @@ int configure_curves(cJSON *json, struct config *config)
     .struct_size = sizeof(struct curve_config),
     .object_count = &config->num_curves,
     .opts = opts,
-    .num_opts = sizeof(opts) / sizeof(struct config_option),
+    .num_opts = sizeof(opts) / sizeof(opts[0]),
     .nested_conf_func = configure_graph
   });
 }
@@ -317,7 +316,7 @@ int configure_fans(cJSON *json, struct config *config)
   // NOLINTBEGIN(performance-no-int-to-ptr)
   static const struct config_option opts[] = {
     {"name", STRING, (void*)offsetof(struct fan_config, name), true},
-    {"driver", STRING, (void*)offsetof(struct fan_config, driver), true},
+    {"device id", STRING, (void*)offsetof(struct fan_config, device_id), true},
     {"pwm file", STRING, (void*)offsetof(struct fan_config, pwm_file), true},
     {"min pwm", NUMBER, (void*)offsetof(struct fan_config, min_pwm), true},
     {"max pwm", NUMBER, (void*)offsetof(struct fan_config, max_pwm), true},
@@ -331,7 +330,7 @@ int configure_fans(cJSON *json, struct config *config)
     .struct_size = sizeof(struct fan_config),
     .object_count = &config->num_fans,
     .opts = opts,
-    .num_opts = sizeof(opts) / sizeof(struct config_option),
+    .num_opts = sizeof(opts) / sizeof(opts[0]),
     .nested_conf_func = link_fan_curves,
     .userdata = config
   });
@@ -341,8 +340,8 @@ int configure_custom_sensors(cJSON *json, struct config *config)
 {
   // NOLINTBEGIN(performance-no-int-to-ptr)
   static const struct config_option opts[] = {
-    {"name", STRING, (void*)offsetof(struct source_config, name), true},
-    {"type", STRING, (void*)offsetof(struct source_config, driver), true}
+    {"name", STRING, (void*)offsetof(struct custom_sensor_config, name), true},
+    {"type", STRING, (void*)offsetof(struct custom_sensor_config, type), true}
   };
   // NOLINTEND(performance-no-int-to-ptr)
 
@@ -357,7 +356,7 @@ int configure_custom_sensors(cJSON *json, struct config *config)
     .struct_size = sizeof(struct custom_sensor_config),
     .object_count = &config->num_custom_sensors,
     .opts = opts,
-    .num_opts = sizeof(opts) / sizeof(struct config_option),
+    .num_opts = sizeof(opts) / sizeof(opts[0]),
     .nested_conf_func = configure_sensors,
     .userdata = &layout
   });
@@ -368,7 +367,7 @@ void free_config(struct config *config)
   for (int i = 0; i < config->num_sources; i++) {
     free(config->source[i].name);
     free(config->source[i].driver);
-    free(config->source[i].pci_device);
+    free(config->source[i].device_id);
 
     for (int j = 0; j < config->source[i].num_sensors; j++) {
       free(config->source[i].sensor[j].name);

@@ -4,7 +4,6 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -22,99 +21,19 @@ void signal_handler(int signum) {
   }
 }
 
-void destroy_hardware(AppContext *app_context) {
-  if (app_context == NULL) {
-    return;
-  }
-
-  if (app_context->source) {
-    hwmon_source_destroy(app_context->source, app_context->initialised_sources);
-  }
-  if (app_context->fan) {
-    hwmon_fan_destroy(app_context->fan, app_context->initialised_fans);
-  }
-
-  free(app_context->source);
-  free(app_context->fan);
-  free(app_context->average_buffer.slot);
+void destroy_hardware(struct app_context *app_context)
+{
+  hwmon_destroy_sources(app_context);
+  hwmon_destroy_fans(app_context);
 }
 
-int init_hardware(struct config *config, AppContext *app_context) {
-  memset(app_context, 0, sizeof(AppContext));
-  app_context->num_sources = config->num_sources;
-  app_context->num_fans = config->num_fans;
-
-  app_context->source = calloc(app_context->num_sources, sizeof(struct hwmon_source));
-  if (app_context->source == NULL) {
-    perror("malloc for sources failed");
-    destroy_hardware(app_context);
-    return -1;
-  }
-
-  for (int i = 0; i < config->num_sources; i++) {
-    if (hwmon_source_init(&config->source[i], &app_context->source[i]) < 0) {
-      (void)fprintf(stderr, "Failed to initialise source: %s\n", config->source[i].name);
-      destroy_hardware(app_context);
-      return -1;
-    }
-    app_context->initialised_sources++;
-  }
-
-  app_context->fan = calloc(config->num_fans, sizeof(struct hwmon_fan));
-  if (app_context->fan == NULL) {
-    perror("malloc for fans failed");
-    destroy_hardware(app_context);
-    return -1;
-  }
-
-  for (int i = 0; i < config->num_fans; i++) {
-    if (hwmon_fan_init(&config->fan[i], &app_context->fan[i]) < 0) {
-      (void)fprintf(stderr, "Failed to initialise fan: %s\n", config->fan[i].name);
-      destroy_hardware(app_context);
-      return -1;
-    }
-    app_context->initialised_fans++;
-  }
-
-  return 0;
-}
-
-void run_main_loop(AppContext *app_context, struct config *config) {
-  long nanoseconds = (long)config->interval * MILLISECOND;
-  struct timespec interval = { .tv_nsec = nanoseconds, .tv_sec = 0 };
-
-  while (keep_running) {
-    float highest_temp = get_highest_temp(app_context);
-    float temp_average = moving_average_update(app_context, highest_temp);
-
-    for (int i = 0; i < app_context->num_fans; i++) {
-      app_context->fan[i].target_fan_percent = calculate_fan_percent(config->fan[i].curve, temp_average);
-      app_context->fan[i].target_pwm_value = calculate_pwm_value(app_context->fan[i].target_fan_percent, config->fan[i].min_pwm, config->fan[i].max_pwm, config->fan[i].zero_rpm);
-
-      if (app_context->fan[i].target_pwm_value != app_context->fan[i].last_pwm_value) {
-        hwmon_set_pwm(&app_context->fan[i], app_context->fan[i].target_pwm_value);
-        app_context->fan[i].last_pwm_value = app_context->fan[i].target_pwm_value;
-      }
-    }
-
-    if (app_context->debug) {
-      printf("\033[2J\033[Hhighest_temp:         %f\n", highest_temp);
-                   printf("hottest_device:       %s\n", app_context->hottest_device);
-                   printf("hottest_sensor:       %s\n", app_context->hottest_sensor);
-                   printf("temp_average:         %f\n", temp_average);
-      for (int i = 0; i < app_context->num_fans; i++) {
-                   printf("\n");
-                   printf("%s:\n", config->fan[i].name);
-                   printf("  target_fan_percent: %f\n", app_context->fan[i].target_fan_percent);
-                   printf("  target_pwm_value:   %i\n", app_context->fan[i].target_pwm_value);
-                   printf("  last_pwm_value      %i\n", app_context->fan[i].last_pwm_value);
-      }
-      if (fflush(stdout) == EOF) {
-        perror("fflush");
-      }
-    }
-
-    nanosleep(&interval, NULL);
+void update_fans(struct app_fan fan[], int num_fans)
+{
+  for (int i = 0; i < num_fans; i++) {
+    float temperature = fan[i].curve->sensor->get_temp_func(fan[i].curve->sensor->data);
+    float fan_percent = calculate_fan_percent(fan[i].config->curve, temperature);
+    int pwm_value = calculate_pwm_value(fan_percent, fan[i].config->min_pwm, fan[i].config->max_pwm, fan[i].config->zero_rpm);
+    hwmon_set_pwm(fan[i].hwmon, pwm_value);
   }
 }
 
@@ -147,22 +66,20 @@ int main(int argc, char *argv[])
     } 
   }
 
-  struct config config;
+  struct config config = {0};
   if (load_config(config_path, &config) < 0) {
     (void)fprintf(stderr, "Error loading config file: %s\n", config_path);
     free_config(&config);
     return EXIT_FAILURE;
   }
 
-  AppContext app_context;
-  if (init_hardware(&config, &app_context) < 0) {
+  struct app_context app_context = {0};
+  if (hwmon_init_sources(&config, &app_context) < 0 ||
+      hwmon_init_fans(&config, &app_context) < 0)
+  {
     (void)fprintf(stderr, "Failed to initialise hardware\n");
+    destroy_hardware(&app_context);
     free_config(&config);
-    return EXIT_FAILURE;
-  }
-
-  if (moving_average_init(&app_context, config.average) < 0) {
-    (void)fprintf(stderr, "Failed to initialise average buffer\n");
     return EXIT_FAILURE;
   }
 
@@ -173,16 +90,16 @@ int main(int argc, char *argv[])
     app_context.debug = false;
   }
 
-  // Set initial pwm values
-  for (int i = 0; i < app_context.num_fans; i++) {
-    hwmon_set_pwm(&app_context.fan[i], 0);
+  long nanoseconds = config.interval * MILLISECOND;
+  struct timespec interval = { .tv_nsec = nanoseconds, .tv_sec = 0 };
+  while (keep_running) {
+    update_fans(app_context.fan, app_context.num_fans);
+    nanosleep(&interval, NULL);
   }
-
-  run_main_loop(&app_context, &config);
 
   // Restore automatic fan control
   for (int i = 0; i < app_context.num_fans; i++) {
-    hwmon_restore_auto_control(&app_context.fan[i]);
+    hwmon_restore_auto_control(app_context.fan[i].hwmon);
   }
   destroy_hardware(&app_context);
   free_config(&config);

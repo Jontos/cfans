@@ -3,52 +3,39 @@
 
 #include <systemd/sd-device.h>
 
-#include "config.h"
-
 enum scale {
   DEGREES = 1,
   MILLIDEGREES = 1000
 };
 
-struct temp_input {
-  char *name;
-  char *filename;
-  sd_device *device;
-
-  float offset;
-  enum scale scale;
-
-  float current_temp;
-};
-
-struct hwmon_source {
-  char *name;
-  sd_device_enumerator *enumerator;
-  sd_device *device;
-
-  struct temp_input *temp_input;
-  int num_inputs;
+struct hwmon_sensor {
+  int fildes;
+  float scale;
 };
 
 struct hwmon_fan {
-  sd_device_enumerator *enumerator;
   sd_device *device;
-  char *pwm_file;
+
+  int pwm_fildes;
   char *pwm_enable_file;
+  const char *pwm_auto_control;
 
   int last_pwm_value;
   float target_fan_percent;
   int target_pwm_value;
 };
 
-int hwmon_source_init(struct source *config, struct hwmon_source *source);
-int hwmon_fan_init(struct fan *config, struct hwmon_fan *fan);
+struct app_context;
+struct config;
 
-int hwmon_read_temp(struct temp_input *input);
+int hwmon_init_sources(struct config *config, struct app_context *app_context);
+int hwmon_init_fans(struct config *config, struct app_context *app_context);
+
+float hwmon_read_temp(void *hwmon_sensor);
 int hwmon_set_pwm(struct hwmon_fan *fan, int pwm_value);
 int hwmon_restore_auto_control(struct hwmon_fan *fan);
 
-void hwmon_source_destroy(struct hwmon_source *sources, int num_sources);
-void hwmon_fan_destroy(struct hwmon_fan *fans, int num_fans);
+void hwmon_destroy_sources(struct app_context *app_context);
+void hwmon_destroy_fans(struct app_context *app_context);
 
 #endif

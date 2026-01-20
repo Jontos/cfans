@@ -19,7 +19,7 @@ struct custom_sensor_config {
 struct source_config {
   char *name;
   char *driver;
-  char *pci_device;
+  char *device_id;
   int scale;
 
   struct sensor_config *sensor;
@@ -29,6 +29,7 @@ struct source_config {
 struct fan_config {
   char *name;
   char *driver;
+  char *device_id;
   char *pwm_file;
   int min_pwm;
   int max_pwm;
@@ -56,7 +57,7 @@ struct curve_config {
 
 struct config {
   int average;
-  int interval;
+  long interval;
 
   struct source_config *source;
   int num_sources;

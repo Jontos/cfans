@@ -1,65 +1,7 @@
-#include <stdio.h>
-#include <stdlib.h>
-
 #include "control.h"
 #include "config.h"
 
 #define ROUNDING_FLOAT 0.5F
-
-float get_highest_temp(AppContext *app_context)
-{
-  float highest_temp = 0;
-  for (int i = 0; i < app_context->num_sources; i++) {
-    for (int j = 0; j < app_context->source[i].num_inputs; j++) {
-      hwmon_read_temp(&app_context->source[i].temp_input[j]);
-      if (app_context->source[i].temp_input[j].current_temp > highest_temp) {
-        highest_temp = app_context->source[i].temp_input[j].current_temp;
-        app_context->hottest_device = app_context->source[i].name;
-        app_context->hottest_sensor = app_context->source[i].temp_input[j].name;
-      }
-    }
-  }
-
-  return highest_temp;
-}
-
-int moving_average_init(AppContext *app_context, int average) {
-  MovingAverage *buffer = &app_context->average_buffer;
-
-  buffer->slot = calloc(average, sizeof(float));
-  if (buffer->slot == NULL) {
-    perror("calloc");
-    return -1;
-  }
-
-  float highest_temp = get_highest_temp(app_context);
-
-  buffer->num_slots = average;
-  for (int i = 0; i < buffer->num_slots; i++) {
-    buffer->slot[i] = highest_temp;
-  }
-
-  return 0;
-}
-
-float moving_average_update(AppContext *app_context, float current_temp) {
-  MovingAverage *buffer = &app_context->average_buffer;
-
-  if (buffer->slot_index % buffer->num_slots == 0) {
-    buffer->slot_index = 0;
-  }
-
-  buffer->slot[buffer->slot_index] = current_temp;
-
-  float total = 0;
-  for (int i = 0; i < buffer->num_slots; i++) {
-    total += buffer->slot[i];
-  }
-
-  buffer->slot_index++;
-
-  return total / (float)buffer->num_slots;
-}
 
 float linearly_interpolate(float temperature, struct graph_point *start, struct graph_point *end)
 {
@@ -70,7 +12,7 @@ float linearly_interpolate(float temperature, struct graph_point *start, struct 
   return (float)start->fan_percent + (offset_from_last * fan_speed_range / temp_range);
 }
 
-float calculate_fan_percent(struct curve *curve, float temperature)
+float calculate_fan_percent(struct curve_config *curve, float temperature)
 {
   int high = curve->num_points - 1;
   int low = 0;

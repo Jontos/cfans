@@ -3,211 +3,318 @@
 #include <stdlib.h>
 #include <string.h>
 #include <systemd/sd-device.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "hwmon.h"
+#include "control.h"
+#include "config.h"
 
 #define HWMON_FILENAME_BUFFER_SIZE 32
-#define HWMON_MAX_PWM_VALUE 4
+#define HWMON_MAX_PWM_VALUE 16
+#define TEMP_INPUT_SIZE 32
 
-int hwmon_device_init(sd_device_enumerator **enumerator, sd_device **device,
-                      const char *driver, const char *pci_device)
+static sd_device *get_sd_device(const char *device_id)
 {
-  *enumerator = NULL;
-  sd_device_enumerator *parent_enumerator = NULL;
-  sd_device *parent_device = NULL;
+  sd_device_enumerator *enumerator [[gnu::cleanup(sd_device_enumerator_unrefp)]] = NULL;
+  sd_device *device = NULL;
 
-  int ret = sd_device_enumerator_new(enumerator);
+  int ret = sd_device_new_from_device_id(&device, device_id);
+  if (ret < 0) {
+    (void)fprintf(stderr, "failed to pci device \"%s\": %s\n", device_id, strerror(-ret));
+    return NULL;
+  }
+
+  ret = sd_device_enumerator_new(&enumerator);
   if (ret < 0) {
     (void)fprintf(stderr, "failed to create enumerator: %s\n", strerror(-ret));
+    return NULL;
+  }
+
+  ret = sd_device_enumerator_add_match_parent(enumerator, device);
+  if (ret < 0) {
+    (void)fprintf(stderr, "failed to add parent match: %s\n", strerror(-ret));
+    return NULL;
+  }
+
+  ret = sd_device_enumerator_add_match_subsystem(enumerator, "hwmon", 1);
+  if (ret < 0) {
+    (void)fprintf(stderr, "failed to add subsystem match: %s\n", strerror(-ret));
+    return NULL;
+  }
+
+  device = sd_device_enumerator_get_device_first(enumerator);
+  if (device == NULL) {
+    (void)fprintf(stderr, "Error: no hwmon device for PCI device \"%s\"\n", device_id);
+    return NULL;
+  }
+
+  const char *devpath;
+  ret = sd_device_get_devpath(device, &devpath);
+  if (ret < 0) {
+    (void)fprintf(stderr, "failed to get hwmon devpath for PCI device \"%s\": %s\n", device_id, strerror(-ret));
+    return NULL;
+  }
+
+  return sd_device_ref(device);
+}
+
+static int init_sensors(sd_device *device,
+                         struct source_config *source_config,
+                         struct app_context *app_context)
+{
+  const char *syspath;
+  int ret = sd_device_get_syspath(device, &syspath);
+  if (ret < 0) {
+    (void)fprintf(stderr, "Failed to get path for \"%s\": %s\n", source_config->device_id, strerror(-ret));
     return -1;
   }
 
-  if (pci_device) {
-    ret = sd_device_enumerator_new(&parent_enumerator);
-    if (ret < 0) {
-      (void)fprintf(stderr, "failed to create enumerator: %s\n", strerror(-ret));
-      goto failure;
+  int count = 0;
+  for (const char *sysattr = sd_device_get_sysattr_first(device);
+       sysattr;
+       sysattr = sd_device_get_sysattr_next(device))
+  {
+    if (count >= source_config->num_sensors) break;
+
+    if (strncmp(sysattr, "temp", 4) != 0 || strstr(sysattr, "_label") == NULL) {
+      continue;
     }
 
-    ret = sd_device_enumerator_add_match_sysattr(parent_enumerator, "device", pci_device, 1);
+    const char *value;
+    ret = sd_device_get_sysattr_value(device, sysattr, &value);
     if (ret < 0) {
-      (void)fprintf(stderr, "failed to add sysattr match: %s\n", strerror(-ret));
-      goto failure;
+      (void)fprintf(stderr, "Failed to read \"%s\": %s\n", sysattr, strerror(-ret));
+      continue;
     }
 
-    parent_device = sd_device_enumerator_get_device_first(parent_enumerator);
+    for (int i = 0; i < source_config->num_sensors; i++) {
+      if (strcmp(source_config->sensor[i].name, value) == 0) {
+        struct hwmon_sensor *sensor = malloc(sizeof(struct hwmon_sensor));
 
-    ret = sd_device_enumerator_add_match_parent(*enumerator, parent_device);
-    if (ret < 0) {
-      (void)fprintf(stderr, "failed to add parent match: %s\n", strerror(-ret));
-      goto failure;
+        long num = strtol(sysattr + strlen("temp"), NULL, 0);
+        char *temp_input_path;
+        if (asprintf(&temp_input_path, "%s/temp%li_input", syspath, num) < 0) {
+          perror("asprintf");
+          return -1;
+        }
+
+        sensor->fildes = open(temp_input_path, O_RDONLY);
+        if (sensor->fildes < 0) {
+          (void)fprintf(stderr, "Failed to open %s: %s\n", temp_input_path, strerror(errno));
+          free(temp_input_path);
+          return -1;
+        }
+        free(temp_input_path);
+
+        sensor->scale = 0;
+
+        app_context->sensor[app_context->num_sensors].config = &source_config->sensor[i];
+        app_context->sensor[app_context->num_sensors].data = sensor;
+        app_context->sensor[app_context->num_sensors].get_temp_func = hwmon_read_temp;
+        app_context->num_sensors++;
+
+        count++;
+        break;
+      }
     }
+
   }
 
-  if (driver) {
-    ret = sd_device_enumerator_add_match_sysattr(*enumerator, "name", driver, 1);
-    if (ret < 0) {
-      (void)fprintf(stderr, "failed to add sysattr match: %s\n", strerror(-ret));
+  return 0;
+}
+
+int hwmon_init_sources(struct config *config, struct app_context *app_context)
+{
+  int sensor_count = 0;
+  for (int i = 0; i < config->num_sources; i++) {
+    sensor_count += config->source[i].num_sensors;
+  }
+
+  if (app_context->num_sensors == 0) {
+    app_context->sensor = calloc(sensor_count, sizeof(struct app_sensor));
+    if (app_context->sensor == NULL) {
+      perror("Failed to allocate app_sensor array");
+      return -1;
+    }
+  }
+  else {
+    app_context->sensor = reallocarray(app_context->sensor, app_context->num_sensors + sensor_count, sizeof(struct app_sensor));
+    if (app_context->sensor == NULL) {
+      perror("Failed to reallocate app_sensor array");
       return -1;
     }
   }
 
-  ret = sd_device_enumerator_add_match_subsystem(*enumerator, "hwmon", 1);
-  if (ret < 0) {
-    (void)fprintf(stderr, "failed to add subsystem match: %s\n", strerror(-ret));
-    return -1;
+  for (int i = 0; i < config->num_sources; i++) {
+    sd_device *device [[gnu::cleanup(sd_device_unrefp)]] = NULL;
+    device = get_sd_device(config->source[i].device_id);
+    if (device == NULL) {
+      return -1;
+    }
+    if (init_sensors(device, &config->source[i], app_context) < 0) {
+      return -1;
+    }
   }
-
-  *device = sd_device_enumerator_get_device_first(*enumerator);
-  if (sd_device_enumerator_get_device_next(*enumerator)) {
-    (void)fprintf(stderr, "Error: more than one match for %s\n", driver);
-    return -1;
-  }
-
-  sd_device_enumerator_unref(parent_enumerator);
 
   return 0;
-
-failure:
-  sd_device_enumerator_unref(*enumerator);
-  if (parent_enumerator != NULL) {
-    sd_device_enumerator_unref(parent_enumerator);
-  }
-  return -1;
 }
 
-int register_temp_inputs(struct hwmon_source *source,
-                         struct sensor sensor[], int num_sensors)
+static int init_fan(const char *syspath, struct fan_config *config, struct hwmon_fan *fan)
 {
-  source->temp_input = calloc(num_sensors, sizeof(struct temp_input));
-  source->num_inputs = num_sensors;
-  if (source->temp_input == NULL) {
-    perror("calloc");
+  char *pwm_file;
+  if (asprintf(&pwm_file, "%s/%s", syspath, config->pwm_file) < 0 ||
+    asprintf(&fan->pwm_enable_file, "%s_enable", config->pwm_file) < 0)
+  {
+    perror("asprintf");
     return -1;
   }
 
+  fan->pwm_fildes = open(pwm_file, O_WRONLY);
+  if (fan->pwm_fildes < 0) {
+    (void)fprintf(stderr, "Failed to open %s: %s\n", pwm_file, strerror(errno));
+    free(pwm_file);
+    return -1;
+  }
+  free(pwm_file);
+
+  if (sd_device_get_sysattr_value(fan->device, fan->pwm_enable_file, &fan->pwm_auto_control) < 0) {
+    (void)fprintf(stderr, "Failed to read %s\n", fan->pwm_enable_file);
+    return -1;
+  }
+
+  return 0;
+}
+
+static int link_curve_sensor(struct app_curve *curve,
+                             struct app_sensor sensor[], int num_sensors)
+{
   for (int i = 0; i < num_sensors; i++) {
-    const char *sysattr;
-    const char *value;
-
-    for (sysattr = sd_device_get_sysattr_first(source->device);
-    sysattr;
-    sysattr = sd_device_get_sysattr_next(source->device)) {
-
-      if (strncmp(sysattr, "temp", 4) != 0 || strstr(sysattr, "_label") == NULL) {
-        continue;
-      }
-
-      if (sd_device_get_sysattr_value(source->device, sysattr, &value) >= 0) {
-        if (strcmp(sensor[i].name, value) != 0) continue;
-
-        char temp_input[HWMON_FILENAME_BUFFER_SIZE];
-        int num = (int)strtol(sysattr + strlen("temp"), NULL, 0);
-        int ret = snprintf(temp_input, sizeof(temp_input), "temp%i_input", num);
-        if (ret < 0 || (size_t)ret >= sizeof(temp_input)) {
-          perror("snprintf");
-          return -1;
-        }
-
-        source->temp_input[i].name = strdup(value);
-        source->temp_input[i].filename = strdup(temp_input);
-        if (source->temp_input[i].name == NULL || source->temp_input[i].filename == NULL) {
-          perror("strdup");
-          return -1;
-        }
-
-        source->temp_input[i].device = source->device;
-
-        source->temp_input[i].offset = sensor[i].offset;
-        source->temp_input[i].scale = DEGREES;
-        if (hwmon_read_temp(&source->temp_input[i])) {
-          (void)fprintf(stderr, "Failed to read temp for %s\n", source->temp_input[i].name);
-          return -1;
-        }
-        if (source->temp_input[i].current_temp > MILLIDEGREES) {
-          source->temp_input[i].scale = MILLIDEGREES;
-        }
-
-        break;
-      }
+    if (strcmp(curve->config->sensor, sensor[i].config->name) == 0) {
+      curve->sensor = &sensor[i];
+      return 0;
     }
   }
 
-  return 0;
-}
-
-int hwmon_source_init(struct source *config, struct hwmon_source *source) {
-  if (hwmon_device_init(&source->enumerator, &source->device, config->driver, config->pci_device) < 0) {
-    return -1;
-  }
-  if (register_temp_inputs(source, config->sensor, config->num_sensors) < 0) {
-    return -1;
-  }
-  source->name = config->name;
-
-  return 0;
-}
-
-int hwmon_fan_init(struct fan *config, struct hwmon_fan *fan) {
-  if (hwmon_device_init(&fan->enumerator, &fan->device, config->driver, NULL) < 0) {
-    return -1;
-  }
-  fan->pwm_file = config->pwm_file;
-  asprintf(&fan->pwm_enable_file, "%s_enable", config->pwm_file);
-
-  return 0;
-}
-
-int hwmon_read_temp(struct temp_input *input)
-{
-  // We need to send a NULL value to libsystemd so it clears the cached sysattr value
-  if (sd_device_set_sysattr_value(input->device, input->filename, NULL) != 0) {
-    (void)fprintf(stderr, "Error clearing libsystemd sysattr cache for %s\n", input->filename);
-    return -1;
-  }
-
-  const char *value;
-  if (sd_device_get_sysattr_value(input->device, input->filename, &value) < 0) return -1;
-
-  input->current_temp = strtof(value, NULL) / (float)input->scale + input->offset;
-
-  return 0;
-}
-
-int hwmon_set_pwm(struct hwmon_fan *fan, int pwm_value) {
-  if (sd_device_set_sysattr_valuef(fan->device, fan->pwm_file, "%i", pwm_value) != 0) {
-    (void)fprintf(stderr, "Error setting PWM value for %s\n", fan->pwm_file);
-    return -1;
-  }
-
-  return 0;
-}
-
-int hwmon_restore_auto_control(struct hwmon_fan *fan) {
-  const char *pwm_auto_mode = "99";
-
-  if (sd_device_set_sysattr_value(fan->device, fan->pwm_enable_file, pwm_auto_mode) >= 0) {
-    return 0;
-  }
-
+  (void)fprintf(stderr, "No sensor \"%s\" found for curve \"%s\"\n",
+                curve->config->sensor, curve->config->name);
   return -1;
 }
 
-void hwmon_source_destroy(struct hwmon_source *sources, int num_sources) {
-  for (int i = 0; i < num_sources; i++) {
-    sd_device_enumerator_unref(sources[i].enumerator);
+int hwmon_init_fans(struct config *config, struct app_context *app_context)
+{
+  app_context->num_fans = config->num_fans;
+  app_context->fan = calloc(app_context->num_fans, sizeof(struct app_fan));
 
-    for (int j = 0; j < sources[i].num_inputs; j++) {
-      free(sources[i].temp_input[j].filename);
-      free(sources[i].temp_input[j].name);
+  for (int i = 0; i < config->num_fans; i++) {
+    app_context->fan[i].hwmon = malloc(sizeof(struct hwmon_fan));
+    if (!app_context->fan[i].hwmon ) {
+      perror("Failed to allocate hwmon_fan struct");
+      return -1;
     }
-    free(sources[i].temp_input);
+
+    app_context->fan[i].hwmon->device = get_sd_device(config->fan[i].device_id);
+    if (!app_context->fan[i].hwmon->device) return -1;
+
+    const char *syspath;
+    int ret = sd_device_get_syspath(app_context->fan[i].hwmon->device, &syspath);
+    if (ret < 0) {
+      (void)fprintf(stderr, "Failed to get path for \"%s\": %s\n",
+                    config->fan[i].device_id, strerror(-ret));
+      return -1;
+    }
+
+    if (init_fan(syspath, &config->fan[i], app_context->fan[i].hwmon) < 0) return -1;
+
+    app_context->fan[i].config = &config->fan[i];
+    app_context->fan[i].curve = malloc(sizeof(struct app_curve));
+    if (!app_context->fan[i].curve) {
+      perror("Failed to allocate app_curve");
+      return -1;
+    }
+
+    app_context->fan[i].curve->config = config->fan[i].curve;
+    if (link_curve_sensor(app_context->fan[i].curve,
+                          app_context->sensor, app_context->num_sensors) < 0)
+    {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+float hwmon_read_temp(void *hwmon_sensor)
+{
+  struct hwmon_sensor *sensor = hwmon_sensor;
+
+  char temp_input_string[TEMP_INPUT_SIZE];
+  ssize_t nread = pread(sensor->fildes, temp_input_string, TEMP_INPUT_SIZE, 0);
+  if (nread < 0) {
+    perror("pread");
+    return -1;
+  }
+  
+  temp_input_string[nread] = '\0';
+  float temp = strtof(temp_input_string, NULL);
+
+  if (sensor->scale == 0) {
+    if (temp > MILLIDEGREES) {
+      sensor->scale = MILLIDEGREES;
+    }
+    else {
+      sensor->scale = DEGREES;
+    }
+  }
+
+  return temp / sensor->scale;
+}
+
+int hwmon_set_pwm(struct hwmon_fan *fan, int pwm_value)
+{
+  char pwm_string[HWMON_MAX_PWM_VALUE];
+
+  int len = snprintf(pwm_string, HWMON_MAX_PWM_VALUE, "%i", pwm_value);
+
+  if (pwrite(fan->pwm_fildes, pwm_string, len, 0) < 0) {
+    perror("pwrite");
+    return -1;
+  }
+
+  return 0;
+}
+
+int hwmon_restore_auto_control(struct hwmon_fan *fan)
+{
+  int ret = sd_device_set_sysattr_value(fan->device, fan->pwm_enable_file, fan->pwm_auto_control);
+  if (ret < 0) {
+    (void)fprintf(stderr, "Failed to set %s back to auto control: %s\n",
+                  fan->pwm_enable_file, strerror(-ret));
+    return -1;
+  }
+
+  return 0;
+}
+
+void hwmon_destroy_sources(struct app_context *app_context)
+{
+  for (int i = 0; i < app_context->num_sensors; i++) {
+    struct hwmon_sensor *sensor = app_context->sensor[i].data;
+    if (close(sensor->fildes) == -1) {
+      perror("close");
+    }
+    free(sensor);
   }
 }
 
-void hwmon_fan_destroy(struct hwmon_fan *fans, int num_fans) {
-  for (int i = 0; i < num_fans; i++) {
-    sd_device_enumerator_unref(fans[i].enumerator);
-    free(fans[i].pwm_enable_file);
+void hwmon_destroy_fans(struct app_context *app_context)
+{
+  for (int i = 0; i < app_context->num_fans; i++) {
+    sd_device_unref(app_context->fan[i].hwmon->device);
+    if (close(app_context->fan[i].hwmon->pwm_fildes) == -1) {
+      perror("close");
+    }
+    free(app_context->fan[i].hwmon->pwm_enable_file);
   }
+  free(app_context->fan);
 }
