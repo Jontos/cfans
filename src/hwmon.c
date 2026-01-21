@@ -17,11 +17,11 @@
 static sd_device *get_sd_device(const char *device_id)
 {
   sd_device_enumerator *enumerator [[gnu::cleanup(sd_device_enumerator_unrefp)]] = NULL;
-  sd_device *device = NULL;
+  sd_device *parent [[gnu::cleanup(sd_device_unrefp)]] = NULL;
 
-  int ret = sd_device_new_from_device_id(&device, device_id);
+  int ret = sd_device_new_from_device_id(&parent, device_id);
   if (ret < 0) {
-    (void)fprintf(stderr, "failed to pci device \"%s\": %s\n", device_id, strerror(-ret));
+    (void)fprintf(stderr, "failed to find device ID \"%s\": %s\n", device_id, strerror(-ret));
     return NULL;
   }
 
@@ -31,7 +31,7 @@ static sd_device *get_sd_device(const char *device_id)
     return NULL;
   }
 
-  ret = sd_device_enumerator_add_match_parent(enumerator, device);
+  ret = sd_device_enumerator_add_match_parent(enumerator, parent);
   if (ret < 0) {
     (void)fprintf(stderr, "failed to add parent match: %s\n", strerror(-ret));
     return NULL;
@@ -43,20 +43,20 @@ static sd_device *get_sd_device(const char *device_id)
     return NULL;
   }
 
-  device = sd_device_enumerator_get_device_first(enumerator);
-  if (device == NULL) {
+  sd_device *child = sd_device_enumerator_get_device_first(enumerator);
+  if (child == NULL) {
     (void)fprintf(stderr, "Error: no hwmon device for PCI device \"%s\"\n", device_id);
     return NULL;
   }
 
   const char *devpath;
-  ret = sd_device_get_devpath(device, &devpath);
+  ret = sd_device_get_devpath(child, &devpath);
   if (ret < 0) {
     (void)fprintf(stderr, "failed to get hwmon devpath for PCI device \"%s\": %s\n", device_id, strerror(-ret));
     return NULL;
   }
 
-  return sd_device_ref(device);
+  return sd_device_ref(child);
 }
 
 static int init_sensors(sd_device *device,
@@ -108,11 +108,14 @@ static int init_sensors(sd_device *device,
         free(temp_input_path);
 
         sensor->scale = 0;
+        sensor->offset = (float)source_config->sensor[i].offset;
 
+        app_context->sensor[app_context->num_sensors].name = source_config->sensor[i].name;
         app_context->sensor[app_context->num_sensors].config = &source_config->sensor[i];
-        app_context->sensor[app_context->num_sensors].data = sensor;
+        app_context->sensor[app_context->num_sensors].sensor_data = sensor;
         app_context->sensor[app_context->num_sensors].get_temp_func = hwmon_read_temp;
         app_context->num_sensors++;
+        app_context->num_hwmon_sensors++;
 
         count++;
         break;
@@ -131,19 +134,10 @@ int hwmon_init_sources(struct config *config, struct app_context *app_context)
     sensor_count += config->source[i].num_sensors;
   }
 
-  if (app_context->num_sensors == 0) {
-    app_context->sensor = calloc(sensor_count, sizeof(struct app_sensor));
-    if (app_context->sensor == NULL) {
-      perror("Failed to allocate app_sensor array");
-      return -1;
-    }
-  }
-  else {
-    app_context->sensor = reallocarray(app_context->sensor, app_context->num_sensors + sensor_count, sizeof(struct app_sensor));
-    if (app_context->sensor == NULL) {
-      perror("Failed to reallocate app_sensor array");
-      return -1;
-    }
+  app_context->sensor = calloc(sensor_count, sizeof(struct app_sensor));
+  if (app_context->sensor == NULL) {
+    perror("Failed to allocate app_sensor array");
+    return -1;
   }
 
   for (int i = 0; i < config->num_sources; i++) {
@@ -186,21 +180,6 @@ static int init_fan(const char *syspath, struct fan_config *config, struct hwmon
   return 0;
 }
 
-static int link_curve_sensor(struct app_curve *curve,
-                             struct app_sensor sensor[], int num_sensors)
-{
-  for (int i = 0; i < num_sensors; i++) {
-    if (strcmp(curve->config->sensor, sensor[i].config->name) == 0) {
-      curve->sensor = &sensor[i];
-      return 0;
-    }
-  }
-
-  (void)fprintf(stderr, "No sensor \"%s\" found for curve \"%s\"\n",
-                curve->config->sensor, curve->config->name);
-  return -1;
-}
-
 int hwmon_init_fans(struct config *config, struct app_context *app_context)
 {
   app_context->num_fans = config->num_fans;
@@ -234,24 +213,19 @@ int hwmon_init_fans(struct config *config, struct app_context *app_context)
     }
 
     app_context->fan[i].curve->config = config->fan[i].curve;
-    if (link_curve_sensor(app_context->fan[i].curve,
-                          app_context->sensor, app_context->num_sensors) < 0)
-    {
-      return -1;
-    }
   }
 
   return 0;
 }
 
-float hwmon_read_temp(void *hwmon_sensor)
+int hwmon_read_temp(struct app_sensor *app_sensor)
 {
-  struct hwmon_sensor *sensor = hwmon_sensor;
+  struct hwmon_sensor *sensor = app_sensor->sensor_data;
 
   char temp_input_string[TEMP_INPUT_SIZE];
   ssize_t nread = pread(sensor->fildes, temp_input_string, TEMP_INPUT_SIZE, 0);
   if (nread < 0) {
-    perror("pread");
+    perror("Couldn't read temperature");
     return -1;
   }
   
@@ -267,7 +241,9 @@ float hwmon_read_temp(void *hwmon_sensor)
     }
   }
 
-  return temp / sensor->scale;
+  app_sensor->current_value = temp / sensor->scale + sensor->offset;
+
+  return 0;
 }
 
 int hwmon_set_pwm(struct hwmon_fan *fan, int pwm_value)
@@ -277,7 +253,7 @@ int hwmon_set_pwm(struct hwmon_fan *fan, int pwm_value)
   int len = snprintf(pwm_string, HWMON_MAX_PWM_VALUE, "%i", pwm_value);
 
   if (pwrite(fan->pwm_fildes, pwm_string, len, 0) < 0) {
-    perror("pwrite");
+    perror("Couldn't change pwm value");
     return -1;
   }
 
@@ -298,12 +274,11 @@ int hwmon_restore_auto_control(struct hwmon_fan *fan)
 
 void hwmon_destroy_sources(struct app_context *app_context)
 {
-  for (int i = 0; i < app_context->num_sensors; i++) {
-    struct hwmon_sensor *sensor = app_context->sensor[i].data;
-    if (close(sensor->fildes) == -1) {
+  for (int i = 0; i < app_context->num_hwmon_sensors; i++) {
+    if (close(((struct hwmon_sensor*)app_context->sensor[i].sensor_data)->fildes) == -1) {
       perror("close");
     }
-    free(sensor);
+    free(app_context->sensor[i].sensor_data);
   }
 }
 
@@ -315,6 +290,8 @@ void hwmon_destroy_fans(struct app_context *app_context)
       perror("close");
     }
     free(app_context->fan[i].hwmon->pwm_enable_file);
+    free(app_context->fan[i].hwmon);
+    free(app_context->fan[i].curve);
   }
   free(app_context->fan);
 }

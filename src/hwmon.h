@@ -11,6 +11,7 @@ enum scale {
 struct hwmon_sensor {
   int fildes;
   float scale;
+  float offset;
 };
 
 struct hwmon_fan {
@@ -26,12 +27,13 @@ struct hwmon_fan {
 };
 
 struct app_context;
+struct app_sensor;
 struct config;
 
 int hwmon_init_sources(struct config *config, struct app_context *app_context);
 int hwmon_init_fans(struct config *config, struct app_context *app_context);
 
-float hwmon_read_temp(void *hwmon_sensor);
+int hwmon_read_temp(struct app_sensor *app_sensor);
 int hwmon_set_pwm(struct hwmon_fan *fan, int pwm_value);
 int hwmon_restore_auto_control(struct hwmon_fan *fan);
 

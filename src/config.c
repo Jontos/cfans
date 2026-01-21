@@ -376,6 +376,13 @@ void free_config(struct config *config)
   }
   free(config->source);
 
+  for (int i = 0; i < config->num_fans; i++) {
+    free(config->fan[i].name);
+    free(config->fan[i].device_id);
+    free(config->fan[i].pwm_file);
+  }
+  free(config->fan);
+
   for (int i = 0; i < config->num_curves; i++) {
     free(config->curve[i].name);
     free(config->curve[i].graph_point);
@@ -393,13 +400,6 @@ void free_config(struct config *config)
     free(config->custom_sensor[i].sensor);
   }
   free(config->custom_sensor);
-
-  for (int i = 0; i < config->num_fans; i++) {
-    free(config->fan[i].name);
-    free(config->fan[i].driver);
-    free(config->fan[i].pwm_file);
-  }
-  free(config->fan);
 }
 
 int load_config(const char *path, struct config *config)

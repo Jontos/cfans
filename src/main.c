@@ -30,10 +30,15 @@ void destroy_hardware(struct app_context *app_context)
 void update_fans(struct app_fan fan[], int num_fans)
 {
   for (int i = 0; i < num_fans; i++) {
-    float temperature = fan[i].curve->sensor->get_temp_func(fan[i].curve->sensor->data);
-    float fan_percent = calculate_fan_percent(fan[i].config->curve, temperature);
-    int pwm_value = calculate_pwm_value(fan_percent, fan[i].config->min_pwm, fan[i].config->max_pwm, fan[i].config->zero_rpm);
-    hwmon_set_pwm(fan[i].hwmon, pwm_value);
+    if (fan[i].curve->sensor->get_temp_func(fan[i].curve->sensor) < 0)
+    {
+      (void)fprintf(stderr, "Failed to read temperature for %s\n", fan[i].curve->sensor->name);
+    }
+    fan[i].fan_percent = calculate_fan_percent(fan[i].config->curve, fan[i].curve->sensor->current_value);
+    fan[i].pwm_value = calculate_pwm_value(fan[i].fan_percent, fan[i].config);
+    if (hwmon_set_pwm(fan[i].hwmon, fan[i].pwm_value) < 0) {
+      (void)fprintf(stderr, "Failed to set fan speed for %s\n", fan[i].config->name);
+    }
   }
 }
 
@@ -75,19 +80,14 @@ int main(int argc, char *argv[])
 
   struct app_context app_context = {0};
   if (hwmon_init_sources(&config, &app_context) < 0 ||
-      hwmon_init_fans(&config, &app_context) < 0)
+      hwmon_init_fans(&config, &app_context) < 0 ||
+      init_custom_sensors(&config, &app_context) < 0 ||
+      link_curve_sensors(&app_context) < 0)
   {
     (void)fprintf(stderr, "Failed to initialise hardware\n");
     destroy_hardware(&app_context);
     free_config(&config);
     return EXIT_FAILURE;
-  }
-
-  if (getenv("DEBUG") != NULL) {
-    app_context.debug = true;
-  }
-  else {
-    app_context.debug = false;
   }
 
   long nanoseconds = config.interval * MILLISECOND;
@@ -97,11 +97,11 @@ int main(int argc, char *argv[])
     nanosleep(&interval, NULL);
   }
 
-  // Restore automatic fan control
   for (int i = 0; i < app_context.num_fans; i++) {
     hwmon_restore_auto_control(app_context.fan[i].hwmon);
   }
   destroy_hardware(&app_context);
+  destroy_custom_sensors(&app_context);
   free_config(&config);
 
   return EXIT_SUCCESS;

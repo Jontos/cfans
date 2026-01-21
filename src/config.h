@@ -5,15 +5,7 @@
 
 struct sensor_config {
   char *name;
-  float offset;
-};
-
-struct custom_sensor_config {
-  char *name;
-  char *type;
-
-  struct sensor_config *sensor;
-  int num_sensors;
+  int offset;
 };
 
 struct source_config {
@@ -28,7 +20,6 @@ struct source_config {
 
 struct fan_config {
   char *name;
-  char *driver;
   char *device_id;
   char *pwm_file;
   int min_pwm;
@@ -53,6 +44,14 @@ struct curve_config {
 
   int hysteresis;
   int response_time;
+};
+
+struct custom_sensor_config {
+  char *name;
+  char *type;
+
+  struct sensor_config *sensor;
+  int num_sensors;
 };
 
 struct config {

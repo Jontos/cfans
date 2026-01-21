@@ -41,7 +41,7 @@
         [85, 70],
         [100, 100]
       ],
-      "sensor": "Tctl"
+      "sensor": "CPU/GPU Max"
     },
     {
       "name": "Intake",
@@ -53,7 +53,7 @@
         [90, 70],
         [100, 100]
       ],
-      "sensor": "Tctl"
+      "sensor": "CPU/GPU Max"
     },
     {
       "name": "Rear Exhaust",
@@ -65,7 +65,7 @@
         [90, 70],
         [100, 100]
       ],
-      "sensor": "Tctl",
+      "sensor": "CPU/GPU Max",
       "hysteresis": 3,
       "response time": 3
     }
