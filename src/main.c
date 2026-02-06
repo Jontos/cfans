@@ -1,4 +1,5 @@
 #include <getopt.h>
+#include <math.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -30,14 +31,24 @@ void destroy_hardware(struct app_context *app_context)
 void update_fans(struct app_fan fan[], int num_fans)
 {
   for (int i = 0; i < num_fans; i++) {
-    if (fan[i].curve->sensor->get_temp_func(fan[i].curve->sensor) < 0)
-    {
+    float old_temp = fan[i].curve->sensor->current_value;
+
+    if (fan[i].curve->sensor->get_temp_func(fan[i].curve->sensor) < 0) {
       (void)fprintf(stderr, "Failed to read temperature for %s\n", fan[i].curve->sensor->name);
     }
+
+    if (fan[i].curve->config->hysteresis > 0) {
+      if (fabsf(old_temp - fan[i].curve->sensor->current_value) < fan[i].curve->config->hysteresis) continue;
+    }
+
     fan[i].fan_percent = calculate_fan_percent(fan[i].config->curve, fan[i].curve->sensor->current_value);
-    fan[i].pwm_value = calculate_pwm_value(fan[i].fan_percent, fan[i].config);
-    if (hwmon_set_pwm(fan[i].hwmon, fan[i].pwm_value) < 0) {
-      (void)fprintf(stderr, "Failed to set fan speed for %s\n", fan[i].config->name);
+    int pwm_value = calculate_pwm_value(fan[i].fan_percent, fan[i].config);
+
+    if (pwm_value != fan[i].pwm_value) {
+      fan[i].pwm_value = pwm_value;
+      if (hwmon_set_pwm(fan[i].hwmon, fan[i].pwm_value) < 0) {
+        (void)fprintf(stderr, "Failed to set fan speed for %s\n", fan[i].config->name);
+      }
     }
   }
 }

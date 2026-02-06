@@ -42,7 +42,7 @@ struct curve_config {
 
   char *sensor;
 
-  int hysteresis;
+  float hysteresis;
   int response_time;
 };
 

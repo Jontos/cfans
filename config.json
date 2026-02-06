@@ -53,21 +53,21 @@
         [90, 70],
         [100, 100]
       ],
-      "sensor": "CPU/GPU Max"
+      "sensor": "CPU/GPU Max",
+      "hysteresis": 10,
+      "response time": 3
     },
     {
       "name": "Rear Exhaust",
       "graph": [
         [60, 0],
         [65, 10],
-        [70, 30],
+        [70, 20],
         [80, 50],
         [90, 70],
         [100, 100]
       ],
-      "sensor": "CPU/GPU Max",
-      "hysteresis": 3,
-      "response time": 3
+      "sensor": "CPU/GPU Max"
     }
   ],
   "fans": [
