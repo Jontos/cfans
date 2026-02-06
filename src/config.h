@@ -5,7 +5,7 @@
 
 struct sensor_config {
   char *name;
-  int offset;
+  float offset;
 };
 
 struct source_config {

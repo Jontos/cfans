@@ -9,6 +9,7 @@
 
 struct custom_sensor_data {
   struct app_sensor *sensor;
+  float *offset;
   int num_sensors;
 };
 
@@ -21,7 +22,7 @@ static int get_max_temp(struct app_sensor *self)
 
   for (int i = 1; i < data->num_sensors; i++) {
     data->sensor[i].get_temp_func(&data->sensor[i]);
-    self->current_value = data->sensor[i].current_value > self->current_value
+    self->current_value = data->sensor[i].current_value + data->offset[i] > self->current_value
       ? data->sensor[i].current_value
       : self->current_value;
   }
@@ -72,14 +73,19 @@ static int link_sensor_array(struct app_context *app_context,
                       struct custom_sensor_config *config,
                       int app_sensor_num)
 {
-  struct custom_sensor_data *data = malloc(sizeof(struct custom_sensor_data));
+  struct custom_sensor_data *data = malloc(sizeof(*data));
   if (!data) {
     perror("Failed to allocate custom_sensor_data");
     return -1;
   }
-  data->sensor = calloc(config->num_sensors, sizeof(struct app_sensor));
+  data->sensor = calloc(config->num_sensors, sizeof(*data->sensor));
   if (!data->sensor) {
     perror("Failed to allocate sensor_config array");
+    return -1;
+  }
+  data->offset = calloc(config->num_sensors, sizeof(*data->offset));
+  if (!data->offset) {
+    perror("Failed to allocate offset array");
     return -1;
   }
   data->num_sensors = config->num_sensors;
@@ -95,7 +101,10 @@ static int link_sensor_array(struct app_context *app_context,
         }
         continue;
       }
-      data->sensor[count++] = app_context->sensor[j];
+      data->sensor[count] = app_context->sensor[j];
+      data->offset[count] = config->sensor[i].offset;
+      count++;
+
       break;
     }
   }
@@ -135,6 +144,7 @@ void destroy_custom_sensors(struct app_context *app_context)
 {
   for (int i = app_context->num_hwmon_sensors; i < app_context->num_sensors; i++) {
     free(((struct custom_sensor_data*)app_context->sensor[i].sensor_data)->sensor);
+    free(((struct custom_sensor_data*)app_context->sensor[i].sensor_data)->offset);
     free(app_context->sensor[i].sensor_data);
   }
   free(app_context->sensor);
