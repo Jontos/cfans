@@ -15,7 +15,7 @@ OBJS = $(SRCS:%.c=$(BUILD_DIR)/%.o)
 
 DEPS = $(OBJS:%.o=$(BUILD_DIR)/%.d)
 
-PKGS = libsystemd libcjson
+PKGS = libsystemd libcjson ncurses
 
 CFLAGS = -Wall -Wextra
 CPPFLAGS = -MMD -MP 

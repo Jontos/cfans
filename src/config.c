@@ -135,10 +135,17 @@ int configure_opts(cJSON *json, struct config_option opts[], int num_opts)
 
 int configure_config_object(cJSON *json, struct sausage *sausage)
 {
-  cJSON *array = cJSON_GetObjectItem(json, sausage->array_name);
-  if (array == NULL) {
-    (void)fprintf(stderr, "Config error: missing %s array\n", sausage->array_name);
-    return -1;
+  cJSON *array = NULL;
+
+  if (sausage->array_name != NULL) {
+    array = cJSON_GetObjectItem(json, sausage->array_name);
+    if (array == NULL) {
+      (void)fprintf(stderr, "Config error: missing %s array\n", sausage->array_name);
+      return -1;
+    }
+  }
+  else {
+    array = json;
   }
 
   *sausage->object_count = cJSON_GetArraySize(array);
@@ -336,6 +343,34 @@ int configure_fans(cJSON *json, struct config *config)
   });
 }
 
+int configure_custom_sensor_type(void *userdata, cJSON *json, void *custom_sensor_struct)
+{
+  (void)userdata;
+  struct custom_sensor_config *struct_ptr = custom_sensor_struct;
+
+  if (strcmp(struct_ptr->type, "max") == 0) {
+    static struct child_array_layout layout = {
+      .array_offset = offsetof(struct custom_sensor_config, type_opts.max.sensor),
+      .count_offset = offsetof(struct custom_sensor_config, type_opts.max.num_sensors)
+    };
+
+    return configure_sensors(&layout, json, struct_ptr);
+  }
+
+  if (strcmp(struct_ptr->type, "file") == 0) {
+    // NOLINTBEGIN(performance-no-int-to-ptr)
+    struct config_option opts[] = {
+      {"path", STRING, (char*)struct_ptr + offsetof(struct custom_sensor_config, type_opts.file.path), true},
+    };
+    // NOLINTEND(performance-no-int-to-ptr)
+
+    return configure_opts(json, opts, sizeof(opts) / sizeof(opts[0]));
+  }
+
+  (void)fprintf(stderr, "Config error: unknown type \"%s\"\n", struct_ptr->type);
+  return -1;
+}
+
 int configure_custom_sensors(cJSON *json, struct config *config)
 {
   // NOLINTBEGIN(performance-no-int-to-ptr)
@@ -345,11 +380,6 @@ int configure_custom_sensors(cJSON *json, struct config *config)
   };
   // NOLINTEND(performance-no-int-to-ptr)
 
-  static struct child_array_layout layout = {
-    .array_offset = offsetof(struct custom_sensor_config, sensor),
-    .count_offset = offsetof(struct custom_sensor_config, num_sensors)
-  };
-
   return configure_config_object(json, &(struct sausage) {
     .array_name = "custom sensors",
     .struct_array = (void**)&config->custom_sensor,
@@ -357,8 +387,7 @@ int configure_custom_sensors(cJSON *json, struct config *config)
     .object_count = &config->num_custom_sensors,
     .opts = opts,
     .num_opts = sizeof(opts) / sizeof(opts[0]),
-    .nested_conf_func = configure_sensors,
-    .userdata = &layout
+    .nested_conf_func = configure_custom_sensor_type,
   });
 }
 
@@ -394,10 +423,12 @@ void free_config(struct config *config)
     free(config->custom_sensor[i].name);
     free(config->custom_sensor[i].type);
 
-    for (int j = 0; j < config->custom_sensor[i].num_sensors; j++) {
-      free(config->custom_sensor[i].sensor[j].name);
+    free(config->custom_sensor[i].type_opts.file.path);
+
+    for (int j = 0; j < config->custom_sensor[i].type_opts.max.num_sensors; j++) {
+      free(config->custom_sensor[i].type_opts.max.sensor[j].name);
     }
-    free(config->custom_sensor[i].sensor);
+    free(config->custom_sensor[i].type_opts.max.sensor);
   }
   free(config->custom_sensor);
 }

@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+#include <ncurses.h>
 
 #include "config.h"
 #include "control.h"
@@ -28,6 +29,23 @@ void destroy_hardware(struct app_context *app_context)
   hwmon_destroy_fans(app_context);
 }
 
+void ui_update(struct app_context *ctx)
+{
+  erase();
+
+  for (int i = 0; i < ctx->num_fans; i++) {
+    struct app_fan *fan = &ctx->fan[i];
+
+    mvprintw(i + 2, 0, "%s", fan->config->name);
+
+    mvprintw(i + 2, 37, "%6.2fC", fan->curve->sensor->current_value);
+    mvprintw(i + 2, 48, "%3.0f%%", fan->fan_percent);
+    mvprintw(i + 2, 64, "%ld", fan->curve->timer);
+  }
+
+  refresh();
+}
+
 void update_fans(struct app_fan fan[], int num_fans)
 {
   for (int i = 0; i < num_fans; i++) {
@@ -38,7 +56,20 @@ void update_fans(struct app_fan fan[], int num_fans)
     }
 
     if (fan[i].curve->config->hysteresis > 0) {
-      if (fabsf(old_temp - fan[i].curve->sensor->current_value) < fan[i].curve->config->hysteresis) continue;
+      if (fabsf(old_temp - fan[i].curve->sensor->current_value) < fan[i].curve->config->hysteresis) {
+        fan[i].curve->timer = 0;
+        continue;
+      }
+    }
+
+    if (fan[i].curve->config->response_time > 0) {
+      if (fan[i].curve->timer == 0) {
+        fan[i].curve->timer = time(NULL);
+        continue;
+      }
+      if (time(NULL) - fan[i].curve->timer < fan[i].curve->config->response_time) {
+        continue;
+      }
     }
 
     fan[i].fan_percent = calculate_fan_percent(fan[i].config->curve, fan[i].curve->sensor->current_value);
@@ -50,6 +81,8 @@ void update_fans(struct app_fan fan[], int num_fans)
         (void)fprintf(stderr, "Failed to set fan speed for %s\n", fan[i].config->name);
       }
     }
+
+    fan[i].curve->timer = 0;
   }
 }
 
@@ -101,10 +134,15 @@ int main(int argc, char *argv[])
     return EXIT_FAILURE;
   }
 
+  initscr();
+  cbreak();
+  noecho();
+
   long nanoseconds = config.interval * MILLISECOND;
   struct timespec interval = { .tv_nsec = nanoseconds, .tv_sec = 0 };
   while (keep_running) {
     update_fans(app_context.fan, app_context.num_fans);
+    ui_update(&app_context);
     nanosleep(&interval, NULL);
   }
 
@@ -114,6 +152,8 @@ int main(int argc, char *argv[])
   destroy_hardware(&app_context);
   destroy_custom_sensors(&app_context);
   free_config(&config);
+
+  endwin();
 
   return EXIT_SUCCESS;
 }

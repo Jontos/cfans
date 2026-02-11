@@ -1,16 +1,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <unistd.h>
 
 #include "control.h"
 #include "config.h"
 
 #define ROUNDING_FLOAT 0.5F
+#define TEMP_INPUT_SIZE 32
 
 struct custom_sensor_data {
   struct app_sensor *sensor;
   float *offset;
   int num_sensors;
+};
+
+struct file_sensor_data {
+  char *path;
+  int fildes;
 };
 
 static int get_max_temp(struct app_sensor *self)
@@ -44,74 +53,131 @@ int link_curve_sensors(struct app_context *app_context)
         continue;
       }
       app_context->fan[i].curve->sensor = &app_context->sensor[j];
+      break;
     }
   }
 
   return 0;
 }
 
-static int match_sensor_type(const char *type_string, struct app_sensor *app_sensor)
+int file_read_temp(struct app_sensor *self)
 {
-  struct {
-    const char *name;
-    int (*get_temp_func)(struct app_sensor *self);
-  }
-  func[] = { {"max", get_max_temp} };
+  struct file_sensor_data *data = self->sensor_data;
 
-  for (int i = 0; i < (int)(sizeof(func) / sizeof(func[i])); i++) {
-    if (strcmp(type_string, func[i].name) == 0) {
-      app_sensor->get_temp_func = func[i].get_temp_func;
-      return 0;
-    }
+  char temp_input_string[TEMP_INPUT_SIZE];
+  ssize_t nread = pread(data->fildes, temp_input_string, TEMP_INPUT_SIZE, 0);
+  if (nread < 0) {
+    (void)fprintf(stderr, "Error: couldn't read %s: %s\n", data->path, strerror(errno));
+    return -1;
   }
+  
+  temp_input_string[nread] = '\0';
 
-  (void)fprintf(stderr, "No custom sensor type \"%s\"\n", type_string);
-  return -1;
+  self->current_value = strtof(temp_input_string, NULL);
+
+  return 0;
 }
 
 static int link_sensor_array(struct app_context *app_context,
-                      struct custom_sensor_config *config,
-                      int app_sensor_num)
+                      struct custom_sensor_config *config)
 {
   struct custom_sensor_data *data = malloc(sizeof(*data));
   if (!data) {
     perror("Failed to allocate custom_sensor_data");
     return -1;
   }
-  data->sensor = calloc(config->num_sensors, sizeof(*data->sensor));
+  data->sensor = calloc(config->type_opts.max.num_sensors, sizeof(*data->sensor));
   if (!data->sensor) {
     perror("Failed to allocate sensor_config array");
     return -1;
   }
-  data->offset = calloc(config->num_sensors, sizeof(*data->offset));
+  data->offset = calloc(config->type_opts.max.num_sensors, sizeof(*data->offset));
   if (!data->offset) {
     perror("Failed to allocate offset array");
     return -1;
   }
-  data->num_sensors = config->num_sensors;
+  data->num_sensors = config->type_opts.max.num_sensors;
 
   int count = 0;
-  for (int i = 0; i < config->num_sensors; i++) {
+  for (int i = 0; i < config->type_opts.max.num_sensors; i++) {
     for (int j = 0; j < app_context->num_sensors; j++) {
-      if (strcmp(config->sensor[i].name, app_context->sensor[j].name) != 0) {
+      if (strcmp(config->type_opts.max.sensor[i].name, app_context->sensor[j].name) != 0) {
         if (j == app_context->num_sensors - 1) {
           (void)fprintf(stderr, "Couldn't find sensor \"%s\" for \"%s\"\n",
-                        config->sensor[i].name, config->name);
+                        config->type_opts.max.sensor[i].name, config->name);
           return -1;
         }
         continue;
       }
       data->sensor[count] = app_context->sensor[j];
-      data->offset[count] = config->sensor[i].offset;
+      data->offset[count] = config->type_opts.max.sensor[i].offset;
       count++;
 
       break;
     }
   }
 
-  app_context->sensor[app_sensor_num].sensor_data = data;
+  app_context->sensor[app_context->num_sensors].sensor_data = data;
 
   return 0;
+}
+
+int link_file_path(struct app_context *app_context,
+                   struct custom_sensor_config *config)
+{
+  struct file_sensor_data *data = malloc(sizeof(*data));
+
+  if (config->type_opts.file.path[0] == '~') {
+    char *dest_path = &config->type_opts.file.path[1];
+    const char *home_path = getenv("HOME");
+    if (!home_path) {
+      (void)fprintf(stderr, "Couldn't expand tilde, is $HOME set?\n");
+      return -1;
+    }
+
+    asprintf(&data->path, "%s/%s", home_path, dest_path);
+    if (!data->path) {
+      perror("asprintf");
+      return -1;
+    }
+
+  }
+  else {
+    data->path = config->type_opts.file.path;
+  }
+
+  data->fildes = open(data->path, O_RDONLY);
+  if (data->fildes < 0) {
+    (void)fprintf(stderr, "Failed to open %s: %s\n", data->path, strerror(errno));
+    return -1;
+  }
+
+  app_context->sensor[app_context->num_sensors].sensor_data = data;
+
+  return 0;
+}
+
+static int match_sensor_type(struct custom_sensor_config *config, struct app_context *app_context)
+{
+  struct {
+    const char *name;
+    int (*get_temp_func)(struct app_sensor *self);
+    int (*setup_func)(struct app_context *app_context, struct custom_sensor_config *config);
+  }
+  type[] = {
+    {"max", get_max_temp, link_sensor_array},
+    {"file", file_read_temp, link_file_path},
+  };
+
+  for (int i = 0; i < (int)(sizeof(type) / sizeof(type[i])); i++) {
+    if (strcmp(config->type, type[i].name) == 0) {
+      app_context->sensor[app_context->num_sensors].get_temp_func = type[i].get_temp_func;
+      return type[i].setup_func(app_context, config);
+    }
+  }
+
+  (void)fprintf(stderr, "No custom sensor type \"%s\"\n", config->type);
+  return -1;
 }
 
 int init_custom_sensors(struct config *config, struct app_context *app_context)
@@ -127,13 +193,7 @@ int init_custom_sensors(struct config *config, struct app_context *app_context)
   for (int i = 0; i < config->num_custom_sensors; i++) {
     app_context->sensor[app_context->num_sensors].name = config->custom_sensor[i].name;
     app_context->sensor[app_context->num_sensors].config = &config->custom_sensor[i];
-    if (match_sensor_type(config->custom_sensor[i].type,
-                          &app_context->sensor[app_context->num_sensors]) < 0 ||
-    link_sensor_array(app_context, &config->custom_sensor[i],
-                      app_context->num_sensors) < 0)
-    {
-      return -1;
-    }
+    if (match_sensor_type(&config->custom_sensor[i], app_context) < 0) return -1;
     app_context->num_sensors++;
   }
 

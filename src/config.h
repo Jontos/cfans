@@ -46,12 +46,23 @@ struct curve_config {
   int response_time;
 };
 
+struct file_sensor_config {
+  char *path;
+};
+
+struct max_sensor_config {
+  struct sensor_config *sensor;
+  int num_sensors;
+};
+
 struct custom_sensor_config {
   char *name;
   char *type;
 
-  struct sensor_config *sensor;
-  int num_sensors;
+  union {
+    struct file_sensor_config file; 
+    struct max_sensor_config max; 
+  } type_opts;
 };
 
 struct config {

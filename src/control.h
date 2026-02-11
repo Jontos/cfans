@@ -2,6 +2,7 @@
 #define CONTROL_H
 
 #include <stdbool.h>
+#include <time.h>
 
 #include "config.h"
 
@@ -18,11 +19,13 @@ struct app_sensor {
   void *sensor_data;
 
   float current_value;
+  float target_value;
 };
 
 struct app_curve {
   struct curve_config *config;
   struct app_sensor *sensor;
+  time_t timer;
 };
 
 struct app_fan {

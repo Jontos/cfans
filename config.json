@@ -21,6 +21,11 @@
   ],
   "custom sensors": [
     {
+      "name": "test",
+      "type": "file",
+      "path": "~/dev/cfans/testing/fake_pwm"
+    },
+    {
       "name": "CPU/GPU Max",
       "type": "max",
       "sensors": [
@@ -53,7 +58,7 @@
         [90, 70],
         [100, 100]
       ],
-      "sensor": "CPU/GPU Max",
+      "sensor": "test",
       "hysteresis": 10,
       "response time": 3
     },
