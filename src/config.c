@@ -23,7 +23,7 @@ struct config_option {
   bool required;
 };
 
-struct sausage {
+struct config_layout {
   char *array_name;
   void **struct_array;
   size_t struct_size;
@@ -133,7 +133,7 @@ int configure_opts(cJSON *json, struct config_option opts[], int num_opts)
   return 0;
 }
 
-int configure_config_object(cJSON *json, struct sausage *sausage)
+int configure_config_object(cJSON *json, struct config_layout *sausage)
 {
   cJSON *array = NULL;
 
@@ -208,7 +208,7 @@ int configure_sensors(void *layout_template, cJSON *json, void *parent_struct)
   };
   // NOLINTEND(performance-no-int-to-ptr)
 
-  return configure_config_object(json, &(struct sausage) {
+  return configure_config_object(json, &(struct config_layout) {
     .array_name = "sensors",
     .struct_array = (void**)(base_ptr + layout->array_offset),
     .struct_size = sizeof(struct sensor_config),
@@ -232,7 +232,7 @@ int configure_sources(cJSON *json, struct config *config)
     .count_offset = offsetof(struct source_config, num_sensors)
   };
 
-  return configure_config_object(json, &(struct sausage) {
+  return configure_config_object(json, &(struct config_layout) {
     .array_name = "sources",
     .struct_array = (void**)&config->source,
     .struct_size = sizeof(struct source_config),
@@ -257,7 +257,7 @@ int configure_graph(void *userdata, cJSON *json, void *curve_struct)
   };
   // NOLINTEND(performance-no-int-to-ptr)
 
-  return configure_config_object(json, &(struct sausage) {
+  return configure_config_object(json, &(struct config_layout) {
     .array_name = "graph",
     .struct_array = (void**)&curve->graph_point,
     .struct_size = sizeof(struct graph_point),
@@ -278,7 +278,7 @@ int configure_curves(cJSON *json, struct config *config)
   };
   // NOLINTEND(performance-no-int-to-ptr)
 
-  return configure_config_object(json, &(struct sausage) {
+  return configure_config_object(json, &(struct config_layout) {
     .array_name = "curves",
     .struct_array = (void**)&config->curve,
     .struct_size = sizeof(struct curve_config),
@@ -331,7 +331,7 @@ int configure_fans(cJSON *json, struct config *config)
   };
   // NOLINTEND(performance-no-int-to-ptr)
 
-  return configure_config_object(json, &(struct sausage) {
+  return configure_config_object(json, &(struct config_layout) {
     .array_name = "fans",
     .struct_array = (void**)&config->fan,
     .struct_size = sizeof(struct fan_config),
@@ -380,7 +380,7 @@ int configure_custom_sensors(cJSON *json, struct config *config)
   };
   // NOLINTEND(performance-no-int-to-ptr)
 
-  return configure_config_object(json, &(struct sausage) {
+  return configure_config_object(json, &(struct config_layout) {
     .array_name = "custom sensors",
     .struct_array = (void**)&config->custom_sensor,
     .struct_size = sizeof(struct custom_sensor_config),
