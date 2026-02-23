@@ -143,7 +143,7 @@ int link_file_path(struct app_context *app_context,
 
   }
   else {
-    data->path = config->type_opts.file.path;
+    data->path = strdup(config->type_opts.file.path);
   }
 
   data->fildes = open(data->path, O_RDONLY);
