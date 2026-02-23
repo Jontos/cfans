@@ -27,12 +27,12 @@ static int get_max_temp(struct app_sensor *self)
   struct custom_sensor_data *data = self->sensor_data;
 
   data->sensor[0].get_temp_func(&data->sensor[0]);
-  self->current_value = data->sensor[0].current_value;
+  self->current_value = data->sensor[0].current_value + data->offset[0];
 
   for (int i = 1; i < data->num_sensors; i++) {
     data->sensor[i].get_temp_func(&data->sensor[i]);
     self->current_value = data->sensor[i].current_value + data->offset[i] > self->current_value
-      ? data->sensor[i].current_value
+      ? data->sensor[i].current_value + data->offset[i]
       : self->current_value;
   }
 
