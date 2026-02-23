@@ -182,13 +182,14 @@ static int match_sensor_type(struct custom_sensor_config *config, struct app_con
 
 int init_custom_sensors(struct config *config, struct app_context *app_context)
 {
-  app_context->sensor = reallocarray(app_context->sensor,
+  void *new_array = reallocarray(app_context->sensor,
                                      app_context->num_sensors + config->num_custom_sensors,
                                      sizeof(struct app_sensor));
-  if (!app_context->sensor) {
+  if (!new_array) {
     perror("Failed to reallocate app_sensor array");
     return -1;
   }
+  app_context->sensor = new_array;
 
   for (int i = 0; i < config->num_custom_sensors; i++) {
     app_context->sensor[app_context->num_sensors].name = config->custom_sensor[i].name;
