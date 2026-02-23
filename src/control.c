@@ -135,7 +135,7 @@ int link_file_path(struct app_context *app_context,
       return -1;
     }
 
-    asprintf(&data->path, "%s/%s", home_path, dest_path);
+    asprintf(&data->path, "%s%s", home_path, dest_path);
     if (!data->path) {
       perror("asprintf");
       return -1;
@@ -203,8 +203,13 @@ int init_custom_sensors(struct config *config, struct app_context *app_context)
 void destroy_custom_sensors(struct app_context *app_context)
 {
   for (int i = app_context->num_hwmon_sensors; i < app_context->num_sensors; i++) {
-    free(((struct custom_sensor_data*)app_context->sensor[i].sensor_data)->sensor);
-    free(((struct custom_sensor_data*)app_context->sensor[i].sensor_data)->offset);
+    if (strcmp(((struct custom_sensor_config*)app_context->sensor[i].config)->type, "max") == 0) {
+      free(((struct custom_sensor_data*)app_context->sensor[i].sensor_data)->sensor);
+      free(((struct custom_sensor_data*)app_context->sensor[i].sensor_data)->offset);
+    }
+    else if (strcmp(((struct custom_sensor_config*)app_context->sensor[i].config)->type, "file") == 0) {
+      free(((struct file_sensor_data*)app_context->sensor[i].sensor_data)->path);
+    }
     free(app_context->sensor[i].sensor_data);
   }
   free(app_context->sensor);

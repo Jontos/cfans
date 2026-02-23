@@ -421,14 +421,16 @@ void free_config(struct config *config)
 
   for (int i = 0; i < config->num_custom_sensors; i++) {
     free(config->custom_sensor[i].name);
-    free(config->custom_sensor[i].type);
-
-    free(config->custom_sensor[i].type_opts.file.path);
-
-    for (int j = 0; j < config->custom_sensor[i].type_opts.max.num_sensors; j++) {
-      free(config->custom_sensor[i].type_opts.max.sensor[j].name);
+    if (strcmp(config->custom_sensor[i].type, "max") == 0) {
+      for (int j = 0; j < config->custom_sensor[i].type_opts.max.num_sensors; j++) {
+        free(config->custom_sensor[i].type_opts.max.sensor[j].name);
+      }
+      free(config->custom_sensor[i].type_opts.max.sensor);
     }
-    free(config->custom_sensor[i].type_opts.max.sensor);
+    else if (strcmp(config->custom_sensor[i].type, "file") == 0) {
+      free(config->custom_sensor[i].type_opts.file.path);
+    }
+    free(config->custom_sensor[i].type);
   }
   free(config->custom_sensor);
 }
