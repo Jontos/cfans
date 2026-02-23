@@ -206,7 +206,7 @@ int hwmon_init_fans(struct config *config, struct app_context *app_context)
     if (init_fan(syspath, &config->fan[i], app_context->fan[i].hwmon) < 0) return -1;
 
     app_context->fan[i].config = &config->fan[i];
-    app_context->fan[i].curve = malloc(sizeof(struct app_curve));
+    app_context->fan[i].curve = calloc(1, sizeof(struct app_curve));
     if (!app_context->fan[i].curve) {
       perror("Failed to allocate app_curve");
       return -1;
