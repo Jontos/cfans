@@ -103,6 +103,7 @@ static int init_sensors(sd_device *device,
         if (sensor->fildes < 0) {
           (void)fprintf(stderr, "Failed to open %s: %s\n", temp_input_path, strerror(errno));
           free(temp_input_path);
+          free(sensor);
           return -1;
         }
         free(temp_input_path);
