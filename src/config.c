@@ -92,7 +92,7 @@ int process_option(cJSON *item, struct config_option *opts)
         (void)fprintf(stderr, "\"%s\" value must be a number\n", opts->key);
         return -1;
       }
-      *(int*)opts->struct_member = (int)number;
+      *(float*)opts->struct_member = (float)number;
       break;
     case BOOL:
       if (!cJSON_IsBool(item)) {

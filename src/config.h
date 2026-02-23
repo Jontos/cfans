@@ -12,7 +12,7 @@ struct source_config {
   char *name;
   char *driver;
   char *device_id;
-  int scale;
+  float scale;
 
   struct sensor_config *sensor;
   int num_sensors;
@@ -22,16 +22,16 @@ struct fan_config {
   char *name;
   char *device_id;
   char *pwm_file;
-  int min_pwm;
-  int max_pwm;
+  float min_pwm;
+  float max_pwm;
   bool zero_rpm;
 
   struct curve_config *curve;
 };
 
 struct graph_point {
-  int temp;
-  int fan_percent;
+  float temp;
+  float fan_percent;
 };
 
 struct curve_config {
@@ -43,7 +43,7 @@ struct curve_config {
   char *sensor;
 
   float hysteresis;
-  int response_time;
+  float response_time;
 };
 
 struct file_sensor_config {
@@ -66,8 +66,8 @@ struct custom_sensor_config {
 };
 
 struct config {
-  int average;
-  long interval;
+  float average;
+  float interval;
 
   struct source_config *source;
   int num_sources;

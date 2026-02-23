@@ -108,7 +108,7 @@ static int init_sensors(sd_device *device,
         free(temp_input_path);
 
         sensor->scale = 0;
-        sensor->offset = (float)source_config->sensor[i].offset;
+        sensor->offset = source_config->sensor[i].offset;
 
         app_context->sensor[app_context->num_sensors].name = source_config->sensor[i].name;
         app_context->sensor[app_context->num_sensors].config = &source_config->sensor[i];

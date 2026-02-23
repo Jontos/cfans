@@ -217,11 +217,11 @@ void destroy_custom_sensors(struct app_context *app_context)
 
 float linearly_interpolate(float temperature, struct graph_point *start, struct graph_point *end)
 {
-  float fan_speed_range = (float)end->fan_percent - (float)start->fan_percent;
-  float temp_range = (float)end->temp - (float)start->temp;
-  float offset_from_last = temperature - (float)start->temp;
+  float fan_speed_range = end->fan_percent - start->fan_percent;
+  float temp_range = end->temp - start->temp;
+  float offset_from_last = temperature - start->temp;
 
-  return (float)start->fan_percent + (offset_from_last * fan_speed_range / temp_range);
+  return start->fan_percent + (offset_from_last * fan_speed_range / temp_range);
 }
 
 float calculate_fan_percent(struct curve_config *curve, float temperature)
@@ -229,19 +229,19 @@ float calculate_fan_percent(struct curve_config *curve, float temperature)
   int high = curve->num_points - 1;
   int low = 0;
 
-  if (temperature <= (float)curve->graph_point[0].temp) {
-    return (float)curve->graph_point[0].fan_percent;
+  if (temperature <= curve->graph_point[0].temp) {
+    return curve->graph_point[0].fan_percent;
   }
-  if (temperature >= (float)curve->graph_point[curve->num_points - 1].temp) {
-    return (float)curve->graph_point[curve->num_points - 1].fan_percent;
+  if (temperature >= curve->graph_point[curve->num_points - 1].temp) {
+    return curve->graph_point[curve->num_points - 1].fan_percent;
   }
 
   while (low <= high) {
     int mid = low + ((high - low) / 2);
-    if (temperature == (float)curve->graph_point[mid].temp) {
-      return (float)curve->graph_point[mid].fan_percent;
+    if (temperature == curve->graph_point[mid].temp) {
+      return curve->graph_point[mid].fan_percent;
     }
-    if (temperature < (float)curve->graph_point[mid].temp) {
+    if (temperature < curve->graph_point[mid].temp) {
       high = mid - 1;
     }
     else {
@@ -260,7 +260,7 @@ int calculate_pwm_value(float fan_percent, struct fan_config *config)
   }
 
   float percent_decimal = fan_percent / 100.0F;
-  int pwm_range = config->max_pwm - config->min_pwm;
+  float pwm_range = config->max_pwm - config->min_pwm;
 
-  return config->min_pwm + (int)(((float)pwm_range * percent_decimal) + ROUNDING_FLOAT);
+  return (int)(config->min_pwm + ((pwm_range * percent_decimal) + ROUNDING_FLOAT));
 }

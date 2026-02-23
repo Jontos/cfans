@@ -25,6 +25,8 @@ struct app_sensor {
 struct app_curve {
   struct curve_config *config;
   struct app_sensor *sensor;
+
+  float hyst_val;
   time_t timer;
 };
 
