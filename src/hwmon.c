@@ -182,8 +182,7 @@ static int init_fan(const char *syspath, struct fan_config *config, struct hwmon
 
 int hwmon_init_fans(struct config *config, struct app_context *app_context)
 {
-  app_context->num_fans = config->num_fans;
-  app_context->fan = calloc(app_context->num_fans, sizeof(struct app_fan));
+  app_context->fan = calloc(config->num_fans, sizeof(struct app_fan));
 
   for (int i = 0; i < config->num_fans; i++) {
     app_context->fan[i].hwmon = malloc(sizeof(struct hwmon_fan));
@@ -213,6 +212,7 @@ int hwmon_init_fans(struct config *config, struct app_context *app_context)
     }
 
     app_context->fan[i].curve->config = config->fan[i].curve;
+    app_context->num_fans++;
   }
 
   return 0;
