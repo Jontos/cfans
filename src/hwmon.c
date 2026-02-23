@@ -223,7 +223,7 @@ int hwmon_read_temp(struct app_sensor *app_sensor)
   struct hwmon_sensor *sensor = app_sensor->sensor_data;
 
   char temp_input_string[TEMP_INPUT_SIZE];
-  ssize_t nread = pread(sensor->fildes, temp_input_string, TEMP_INPUT_SIZE, 0);
+  ssize_t nread = pread(sensor->fildes, temp_input_string, TEMP_INPUT_SIZE - 1, 0);
   if (nread < 0) {
     perror("Couldn't read temperature");
     return -1;

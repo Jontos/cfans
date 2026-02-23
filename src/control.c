@@ -65,7 +65,7 @@ int file_read_temp(struct app_sensor *self)
   struct file_sensor_data *data = self->sensor_data;
 
   char temp_input_string[TEMP_INPUT_SIZE];
-  ssize_t nread = pread(data->fildes, temp_input_string, TEMP_INPUT_SIZE, 0);
+  ssize_t nread = pread(data->fildes, temp_input_string, TEMP_INPUT_SIZE - 1, 0);
   if (nread < 0) {
     (void)fprintf(stderr, "Error: couldn't read %s: %s\n", data->path, strerror(errno));
     return -1;
