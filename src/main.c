@@ -49,14 +49,12 @@ void ui_update(struct app_context *ctx)
 void update_fans(struct app_fan fan[], int num_fans)
 {
   for (int i = 0; i < num_fans; i++) {
-    float old_temp = fan[i].curve->sensor->current_value;
-
     if (fan[i].curve->sensor->get_temp_func(fan[i].curve->sensor) < 0) {
       (void)fprintf(stderr, "Failed to read temperature for %s\n", fan[i].curve->sensor->name);
     }
 
     if (fan[i].curve->config->hysteresis > 0) {
-      if (fabsf(old_temp - fan[i].curve->sensor->current_value) < fan[i].curve->config->hysteresis) {
+      if (fabsf(fan[i].curve->hyst_val - fan[i].curve->sensor->current_value) < fan[i].curve->config->hysteresis) {
         fan[i].curve->timer = 0;
         continue;
       }
@@ -67,10 +65,12 @@ void update_fans(struct app_fan fan[], int num_fans)
         fan[i].curve->timer = time(NULL);
         continue;
       }
-      if (time(NULL) - fan[i].curve->timer < fan[i].curve->config->response_time) {
+      if (time(NULL) - fan[i].curve->timer < (time_t)fan[i].curve->config->response_time) {
         continue;
       }
     }
+
+    fan[i].curve->hyst_val = fan[i].curve->sensor->current_value;
 
     fan[i].fan_percent = calculate_fan_percent(fan[i].config->curve, fan[i].curve->sensor->current_value);
     int pwm_value = calculate_pwm_value(fan[i].fan_percent, fan[i].config);
