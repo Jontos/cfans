@@ -27,7 +27,7 @@ struct app_curve {
   struct app_sensor *sensor;
 
   float hyst_val;
-  time_t timer;
+  struct timespec timer;
 };
 
 struct app_fan {
@@ -46,6 +46,8 @@ struct app_context {
 
   struct app_fan *fan;
   int num_fans;
+
+  struct timespec clock;
 };
 
 int init_custom_sensors(struct config *config, struct app_context *app_context);

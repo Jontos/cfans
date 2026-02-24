@@ -10,12 +10,13 @@
 
 #ifdef DEBUG
 #include <ncurses.h>
-#endif //DEBUG
+#endif // DEBUG
 
 #include "config.h"
 #include "control.h"
 #include "hwmon.h"
 
+#define NANOSECOND (int)1e9
 #define MILLISECOND (int)1e6
 
 volatile sig_atomic_t keep_running = 1;
@@ -40,22 +41,32 @@ void ui_update(struct app_context *ctx)
   for (int i = 0; i < ctx->num_fans; i++) {
     struct app_fan *fan = &ctx->fan[i];
 
+    // NOLINTBEGIN(readability-magic-numbers)
     mvprintw(i + 2, 0, "%s", fan->config->name);
 
     mvprintw(i + 2, 37, "%6.2fC", fan->curve->sensor->current_value);
     mvprintw(i + 2, 48, "%3.0f%%", fan->fan_percent);
     mvprintw(i + 2, 56, "%6.2fC", fan->curve->hyst_val);
     mvprintw(i + 2, 68, "%6.2fC", fan->curve->config->hysteresis);
-    if (fan->curve->timer > 0) {
-      mvprintw(i + 2, 76, "%jd", (time_t)fan->curve->config->response_time + fan->curve->timer - time(NULL));
+    if (fan->curve->timer.tv_sec > 0) {
+      if (clock_gettime(CLOCK_MONOTONIC, &ctx->clock) == -1) {
+        perror("clock_gettime");
+      }
+
+      long elapsed = (ctx->clock.tv_sec - fan->curve->timer.tv_sec) +
+                     (ctx->clock.tv_nsec - fan->curve->timer.tv_nsec) / NANOSECOND;
+      long remaining = (long)fan->curve->config->response_time - elapsed;
+
+      mvprintw(i + 2, 76, "%ld", remaining);
     }
+    // NOLINTEND(readability-magic-numbers)
   }
 
   refresh();
 }
-#endif //DEBUG
+#endif // DEBUG
 
-void update_fans(struct app_fan fan[], int num_fans)
+void update_fans(struct app_fan fan[], int num_fans, struct timespec *clock)
 {
   for (int i = 0; i < num_fans; i++) {
     if (fan[i].curve->sensor->get_temp_func(fan[i].curve->sensor) < 0) {
@@ -64,17 +75,25 @@ void update_fans(struct app_fan fan[], int num_fans)
 
     if (fan[i].curve->config->hysteresis > 0) {
       if (fabsf(fan[i].curve->hyst_val - fan[i].curve->sensor->current_value) < fan[i].curve->config->hysteresis) {
-        fan[i].curve->timer = 0;
+        fan[i].curve->timer.tv_sec = 0;
         continue;
       }
     }
 
     if (fan[i].curve->config->response_time > 0) {
-      if (fan[i].curve->timer == 0) {
-        fan[i].curve->timer = time(NULL);
+      if (clock_gettime(CLOCK_MONOTONIC, clock) == -1) {
+        perror("clock_gettime");
+      }
+
+      if (fan[i].curve->timer.tv_sec == 0) {
+        fan[i].curve->timer = *clock;
         continue;
       }
-      if (time(NULL) - fan[i].curve->timer < (time_t)fan[i].curve->config->response_time) {
+
+      long elapsed = (clock->tv_sec - fan[i].curve->timer.tv_sec) +
+                     (clock->tv_nsec - fan[i].curve->timer.tv_nsec) / NANOSECOND;
+
+      if ((long)fan[i].curve->config->response_time > elapsed) {
         continue;
       }
     }
@@ -91,7 +110,7 @@ void update_fans(struct app_fan fan[], int num_fans)
       }
     }
 
-    fan[i].curve->timer = 0;
+    fan[i].curve->timer.tv_sec = 0;
   }
 }
 
@@ -147,16 +166,16 @@ int main(int argc, char *argv[])
   initscr();
   cbreak();
   noecho();
-#endif //DEBUG
+#endif // DEBUG
 
-  long nanoseconds = config.interval * MILLISECOND;
+  long nanoseconds = (long)config.interval * MILLISECOND;
   struct timespec interval = { .tv_nsec = nanoseconds, .tv_sec = 0 };
   while (keep_running) {
-    update_fans(app_context.fan, app_context.num_fans);
+    update_fans(app_context.fan, app_context.num_fans, &app_context.clock);
 
 #ifdef DEBUG
     ui_update(&app_context);
-#endif //DEBUG
+#endif // DEBUG
 
     nanosleep(&interval, NULL);
   }
@@ -170,7 +189,7 @@ int main(int argc, char *argv[])
 
 #ifdef DEBUG
   endwin();
-#endif //DEBUG
+#endif // DEBUG
 
   return EXIT_SUCCESS;
 }
