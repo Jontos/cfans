@@ -13,7 +13,7 @@ SRCS = src/main.c \
 OBJS = $(SRCS:%.c=$(BUILD_DIR)/%.o)
 DEPS = $(OBJS:%.o=$(BUILD_DIR)/%.d)
 
-PKGS = libsystemd libcjson ncurses
+PKGS = libsystemd libcjson
 
 CFLAGS ?= -O2 -pipe
 LDFLAGS ?=
@@ -27,7 +27,8 @@ SYSCONFDIR ?= /etc
 
 # Add debug symbols and strip optimizations if DEBUG=1 is passed
 ifeq ($(DEBUG), 1)
-	CFLAGS := $(filter-out -O1 -O2 -O3 -Os,$(CFLAGS)) -g -O0
+	CFLAGS := $(filter-out -O1 -O2 -O3 -Os,$(CFLAGS)) -g -O0 -DDEBUG 
+	PKGS += ncurses
 endif
 
 .PHONY: all clean install

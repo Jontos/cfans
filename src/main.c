@@ -7,7 +7,10 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+
+#ifdef DEBUG
 #include <ncurses.h>
+#endif //DEBUG
 
 #include "config.h"
 #include "control.h"
@@ -29,6 +32,7 @@ void destroy_hardware(struct app_context *app_context)
   hwmon_destroy_fans(app_context);
 }
 
+#ifdef DEBUG
 void ui_update(struct app_context *ctx)
 {
   erase();
@@ -40,11 +44,16 @@ void ui_update(struct app_context *ctx)
 
     mvprintw(i + 2, 37, "%6.2fC", fan->curve->sensor->current_value);
     mvprintw(i + 2, 48, "%3.0f%%", fan->fan_percent);
-    mvprintw(i + 2, 64, "%ld", fan->curve->timer);
+    mvprintw(i + 2, 56, "%6.2fC", fan->curve->hyst_val);
+    mvprintw(i + 2, 68, "%6.2fC", fan->curve->config->hysteresis);
+    if (fan->curve->timer > 0) {
+      mvprintw(i + 2, 76, "%jd", (time_t)fan->curve->config->response_time + fan->curve->timer - time(NULL));
+    }
   }
 
   refresh();
 }
+#endif //DEBUG
 
 void update_fans(struct app_fan fan[], int num_fans)
 {
@@ -134,15 +143,21 @@ int main(int argc, char *argv[])
     return EXIT_FAILURE;
   }
 
+#ifdef DEBUG
   initscr();
   cbreak();
   noecho();
+#endif //DEBUG
 
   long nanoseconds = config.interval * MILLISECOND;
   struct timespec interval = { .tv_nsec = nanoseconds, .tv_sec = 0 };
   while (keep_running) {
     update_fans(app_context.fan, app_context.num_fans);
+
+#ifdef DEBUG
     ui_update(&app_context);
+#endif //DEBUG
+
     nanosleep(&interval, NULL);
   }
 
@@ -153,7 +168,9 @@ int main(int argc, char *argv[])
   destroy_custom_sensors(&app_context);
   free_config(&config);
 
+#ifdef DEBUG
   endwin();
+#endif //DEBUG
 
   return EXIT_SUCCESS;
 }
