@@ -46,7 +46,7 @@ $(BUILD_DIR)/%.o: %.c
 install: $(BUILD_DIR)/$(TARGET)
 	install -D -m 755 $(BUILD_DIR)/$(TARGET) $(DESTDIR)$(PREFIX)/bin/$(TARGET)
 	
-	install -D -m 644 config.json $(DESTDIR)$(SYSCONFDIR)/cfans/config.json.example
+	install -D -m 644 config.json.example $(DESTDIR)$(SYSCONFDIR)/cfans/config.json.example
 
 	install -D -m 644 cfans.service $(DESTDIR)$(PREFIX)/lib/systemd/system/cfans.service
 	install -D -m 644 51-cfans.rules $(DESTDIR)$(PREFIX)/lib/udev/rules.d/51-cfans.rules

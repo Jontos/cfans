@@ -28,7 +28,7 @@ Currently only tested on Arch Linux.
 
 Configuration
 -------------
-By default `cfans` reads `/etc/cfans/config.json` for configuration. A custom location can be supplied with the `-c` command line flag. See [config.json](config.json) for an example configuration.
+By default `cfans` reads `/etc/cfans/config.json` for configuration. A custom location can be supplied with the `-c` command line flag. See [config.json.example](config.json.example) for an example configuration.
 
 Project Status & Roadmap
 ------------------------
