@@ -1,3 +1,4 @@
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +10,7 @@
 #include "config.h"
 
 #define ROUNDING_FLOAT 0.5F
+#define EPSILON 0.0001F
 #define TEMP_INPUT_SIZE 32
 
 struct custom_sensor_data {
@@ -238,8 +240,8 @@ float calculate_fan_percent(struct curve_config *curve, float temperature)
   }
 
   while (low <= high) {
-    int mid = low + ((high - low) / 2);
-    if (temperature == curve->graph_point[mid].temp) {
+    int mid = low + (high - low) / 2;
+    if (fabsf(temperature - curve->graph_point[mid].temp) < EPSILON) {
       return curve->graph_point[mid].fan_percent;
     }
     if (temperature < curve->graph_point[mid].temp) {
