@@ -16,8 +16,7 @@
 #include "control.h"
 #include "hwmon.h"
 
-#define NANOSECOND (int)1e9
-#define MILLISECOND (int)1e6
+#define NS_PER_SEC 1000000000L
 
 volatile sig_atomic_t keep_running = 1;
 
@@ -54,7 +53,7 @@ void ui_update(struct app_context *ctx)
       }
 
       long elapsed = (ctx->clock.tv_sec - fan->curve->timer.tv_sec) +
-                     (ctx->clock.tv_nsec - fan->curve->timer.tv_nsec) / NANOSECOND;
+                     (ctx->clock.tv_nsec - fan->curve->timer.tv_nsec) / NS_PER_SEC;
       long remaining = (long)fan->curve->config->response_time - elapsed;
 
       mvprintw(i + 2, 76, "%ld", remaining);
@@ -91,7 +90,7 @@ void update_fans(struct app_fan fan[], int num_fans, struct timespec *clock)
       }
 
       long elapsed = (clock->tv_sec - fan[i].curve->timer.tv_sec) +
-                     (clock->tv_nsec - fan[i].curve->timer.tv_nsec) / NANOSECOND;
+                     (clock->tv_nsec - fan[i].curve->timer.tv_nsec) / NS_PER_SEC;
 
       if ((long)fan[i].curve->config->response_time > elapsed) {
         continue;
@@ -168,8 +167,12 @@ int main(int argc, char *argv[])
   noecho();
 #endif // DEBUG
 
-  long nanoseconds = (long)config.interval * MILLISECOND;
-  struct timespec interval = { .tv_nsec = nanoseconds, .tv_sec = 0 };
+  long interval_ms = (long)config.interval;
+  struct timespec interval = {
+    .tv_sec = interval_ms / 1000,
+    .tv_nsec = interval_ms % 1000 * 1000000
+  };
+
   while (keep_running) {
     update_fans(app_context.fan, app_context.num_fans, &app_context.clock);
 
@@ -177,7 +180,10 @@ int main(int argc, char *argv[])
     ui_update(&app_context);
 #endif // DEBUG
 
-    nanosleep(&interval, NULL);
+    if (nanosleep(&interval, NULL) == -1 && errno == EINVAL) {
+      perror("nanosleep");
+      break;
+    }
   }
 
   for (int i = 0; i < app_context.num_fans; i++) {

@@ -1,5 +1,4 @@
 {
-  "interval": 200,
   "sources": [
     {
       "name": "GPU",

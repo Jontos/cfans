@@ -9,6 +9,8 @@
 
 #include "config.h"
 
+#define DEFAULT_INTERVAL 1000.0F // 1000ms
+
 enum value_type {
   STRING,
   NUMBER,
@@ -187,8 +189,10 @@ int configure_config_object(cJSON *json, struct config_layout *sausage)
 int configure_general(cJSON *json, struct config *config)
 {
   struct config_option opts[] = {
-    {"interval", NUMBER, &config->interval, true}
+    {"interval", NUMBER, &config->interval, false}
   };
+
+  config->interval = DEFAULT_INTERVAL;
 
   int num_opts = (sizeof(opts) / sizeof(opts[0]));
 
