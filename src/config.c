@@ -43,6 +43,43 @@ struct child_array_layout {
   size_t count_offset;
 };
 
+static void print_config_error(const char *buffer, const char *error_ptr)
+{
+  const char *target_ptr = error_ptr;
+
+  // error_ptr points to the token after the error; this backtracks to the 
+  // previous token so we can print the actual cause of the error
+  if (target_ptr > buffer) {
+    const char *prev = target_ptr - 1;
+    while (prev > buffer && (*prev == ' ' || *prev == '\t' || *prev == '\n' || *prev == '\r')) {
+      prev--;
+    }
+    target_ptr = prev + 1;
+  }
+
+  int line = 1;
+  const char *line_start = buffer;
+
+  for (const char *ptr = buffer; ptr < target_ptr; ptr++) {
+    if (*ptr == '\n') {
+      line++;
+      line_start = ptr + 1;
+    }
+  }
+
+  const char *line_end = target_ptr;
+  while (*line_end != '\0' && *line_end != '\n') {
+    line_end++;
+  }
+
+  int line_length = (int)(line_end - line_start);
+  int column = (int)(target_ptr - line_start);
+
+  (void)fprintf(stderr, "Config error: JSON syntax error on line %d:\n", line);
+  (void)fprintf(stderr, "    %.*s\n", line_length, line_start);
+  (void)fprintf(stderr, "    %*s^\n", column, "");
+}
+
 cJSON *parse_config(const char *path)
 {
   cJSON *ret = NULL;
@@ -50,7 +87,7 @@ cJSON *parse_config(const char *path)
   FILE *file = fopen(path, "r");
 
   if (file == NULL) {
-    (void)fprintf(stderr, "Failed to open %s\n", path);
+    (void)fprintf(stderr, "Config error: Failed to open %s\n", path);
     return ret;
   }
 
@@ -58,6 +95,15 @@ cJSON *parse_config(const char *path)
   size_t len;
   if (getdelim(&buffer, &len, '\0', file) != -1) {
     ret = cJSON_Parse(buffer);
+    if (!ret) {
+      const char *error_ptr = cJSON_GetErrorPtr();
+      if (!error_ptr) {
+        (void)fprintf(stderr, "Config error: Unknown JSON parsing error\n");
+      }
+      else {
+        print_config_error(buffer, error_ptr);
+      }
+    }
   }
   else if (ferror(file)) {
     perror("getdelim");
@@ -441,10 +487,7 @@ void free_config(struct config *config)
 int load_config(const char *path, struct config *config)
 {
   cJSON *json = parse_config(path);
-  if (json == NULL) {
-    (void)fprintf(stderr, "Error parsing config file\n");
-    return -1;
-  }
+  if (!json) return -1;
 
   int (*function[])(cJSON*, struct config*) = {
     configure_general,
