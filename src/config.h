@@ -66,7 +66,6 @@ struct custom_sensor_config {
 };
 
 struct config {
-  float average;
   float interval;
 
   struct source_config *source;

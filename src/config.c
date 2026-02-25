@@ -187,7 +187,6 @@ int configure_config_object(cJSON *json, struct config_layout *sausage)
 int configure_general(cJSON *json, struct config *config)
 {
   struct config_option opts[] = {
-    {"average", NUMBER, &config->average, true},
     {"interval", NUMBER, &config->interval, true}
   };
 
