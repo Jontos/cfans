@@ -129,24 +129,7 @@ int link_file_path(struct app_context *app_context,
 {
   struct file_sensor_data *data = malloc(sizeof(*data));
 
-  if (config->type_opts.file.path[0] == '~') {
-    char *dest_path = &config->type_opts.file.path[1];
-    const char *home_path = getenv("HOME");
-    if (!home_path) {
-      (void)fprintf(stderr, "Couldn't expand tilde, is $HOME set?\n");
-      return -1;
-    }
-
-    asprintf(&data->path, "%s%s", home_path, dest_path);
-    if (!data->path) {
-      perror("asprintf");
-      return -1;
-    }
-
-  }
-  else {
-    data->path = strdup(config->type_opts.file.path);
-  }
+  data->path = config->type_opts.file.path;
 
   data->fildes = open(data->path, O_RDONLY);
   if (data->fildes < 0) {
@@ -209,9 +192,6 @@ void destroy_custom_sensors(struct app_context *app_context)
     if (strcmp(((struct custom_sensor_config*)app_context->sensor[i].config)->type, "max") == 0) {
       free(((struct custom_sensor_data*)app_context->sensor[i].sensor_data)->sensor);
       free(((struct custom_sensor_data*)app_context->sensor[i].sensor_data)->offset);
-    }
-    else if (strcmp(((struct custom_sensor_config*)app_context->sensor[i].config)->type, "file") == 0) {
-      free(((struct file_sensor_data*)app_context->sensor[i].sensor_data)->path);
     }
     free(app_context->sensor[i].sensor_data);
   }
