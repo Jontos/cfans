@@ -34,6 +34,6 @@ Project Status & Roadmap
 ------------------------
 This project is currently in active development.
 
-License
+Licence
 -------
-This project is licensed under the GNU General Public License v3 (GPLv3) - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public Licence v3 (GPLv3) - see the [LICENCE](LICENCE) file for details.
