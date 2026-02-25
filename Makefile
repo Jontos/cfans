@@ -18,7 +18,7 @@ PKGS = libsystemd libcjson
 CFLAGS ?= -O2 -pipe
 LDFLAGS ?=
 CPPFLAGS ?=
-EXTRA_CFLAGS = -Wall -Wextra $(shell pkgconf --cflags $(PKGS))
+EXTRA_CFLAGS = -Wall -Wextra -std=gnu23 $(shell pkgconf --cflags $(PKGS))
 EXTRA_CPPFLAGS = -MMD -MP 
 LDLIBS = $(shell pkgconf --libs $(PKGS))
 
