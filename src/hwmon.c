@@ -1,3 +1,4 @@
+#include <linux/limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -157,10 +158,13 @@ int hwmon_init_sources(struct config *config, struct app_context *app_context)
 
 static int init_fan(const char *syspath, struct fan_config *config, struct hwmon_fan *fan)
 {
-  char *pwm_file;
-  if (asprintf(&pwm_file, "%s/%s", syspath, config->pwm_file) < 0 ||
-    asprintf(&fan->pwm_enable_file, "%s_enable", config->pwm_file) < 0)
-  {
+  char pwm_file[PATH_MAX];
+  if (snprintf(pwm_file, sizeof(pwm_file), "%s/%s", syspath, config->pwm_file) >= (int)sizeof(pwm_file)) {
+    (void)fprintf(stderr, "Path truncated: %s\n", pwm_file);
+    return -1;
+  }
+
+  if (asprintf(&fan->pwm_enable_file, "%s_enable", config->pwm_file) < 0) {
     perror("asprintf");
     return -1;
   }
@@ -168,10 +172,8 @@ static int init_fan(const char *syspath, struct fan_config *config, struct hwmon
   fan->pwm_fildes = open(pwm_file, O_WRONLY);
   if (fan->pwm_fildes < 0) {
     (void)fprintf(stderr, "Failed to open %s: %s\n", pwm_file, strerror(errno));
-    free(pwm_file);
     return -1;
   }
-  free(pwm_file);
 
   if (sd_device_get_sysattr_value(fan->device, fan->pwm_enable_file, &fan->pwm_auto_control) < 0) {
     (void)fprintf(stderr, "Failed to read %s\n", fan->pwm_enable_file);
