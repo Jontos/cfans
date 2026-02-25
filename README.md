@@ -34,12 +34,6 @@ Project Status & Roadmap
 ------------------------
 This project is currently in active development.
 
-### Planned features/TODO
-- [ ] Automatic hwmon sensor and PWM control detection.
-- [ ] Sensor value averaging.
-- [ ] Add a PKGBUILD and publish to the AUR.
-- [ ] Implement IPC interface to allow external control/configuration.
-
 License
 -------
 This project is licensed under the GNU General Public License v3 (GPLv3) - see the [LICENSE](LICENSE) file for details.
